@@ -1,5 +1,6 @@
 
-module project 
+module project
+#(parameter simulation = 0)
 (
     input logic clk_50MHz,
 
@@ -22,7 +23,7 @@ module project
 
     logic button_a;
 
-    assign clock_200MHz = pll_clock_o;
+    assign clock_200MHz = simulation ? clk_50MHz : pll_clock_o;
     assign clock_core = clock_200MHz;
 
     mod_por por
@@ -33,7 +34,7 @@ module project
 
     logic pll_locked;
 
-    assign device_ready = pll_locked;
+    assign device_ready = simulation ? '1 : pll_locked;
 
     assign clock_button = clock_presc[7];
 
@@ -54,7 +55,7 @@ module project
     mod_presc presc_1MHz
         (
             .clk_i      (clock_200MHz),
-            .presc_i    (200),
+            .presc_i    (simulation ? 50 : 200),
             .rst_i      (por_reset),
             .clk_o      (clock_1MHz)
         );
@@ -62,10 +63,12 @@ module project
     logic buz_trig = '0;
     logic buz_busy;
 
-    mod_buzzer buzzer
-        (
+    mod_buzzer
+    #(
+        .simulation(simulation)
+    ) buzzer (
             .clk_i_1MHz     (clock_1MHz),
-            .period_ms_i    (1000),
+            .period_ms_i    (simulation ? 10 : 1000),
             .trig_i         (buz_trig),
             .rst_i          (por_reset),
             .pin_act_lvl_i  ('1),
@@ -82,7 +85,7 @@ module project
 
     always_ff @ (posedge clock_core) begin
         if (!buz_busy) begin
-            buz_trig <= button_a;
+            buz_trig <= simulation ? button_a_i : button_a;
         end else begin
             buz_trig <= '0;
         end

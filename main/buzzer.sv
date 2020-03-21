@@ -1,7 +1,8 @@
 
 module mod_buzzer
 #(
-    parameter BUZ_PERIOD_MS = 3000
+    parameter BUZ_PERIOD_MS = 3000,
+    parameter simulation = 0
 )
     (
         input logic clk_i_1MHz,
@@ -20,7 +21,13 @@ module mod_buzzer
 
     enum logic[1 : 0] {BUZ_IDLE, BUZ_BEEP, BUZ_DONE} buzstate     = BUZ_IDLE,
                                                      buznextstate = BUZ_IDLE;
-    assign clk_1KHz = clk_presc[$clog2(1000) - 1];
+    always_comb begin
+        if (simulation) begin
+            clk_1KHz = clk_i_1MHz;
+        end else begin
+            clk_1KHz = clk_presc[$clog2(1000) - 1];
+        end
+    end
 
     always_ff @(posedge clk_i_1MHz) begin
         clk_presc <= clk_presc + 1'b1;
@@ -30,7 +37,7 @@ module mod_buzzer
         buzstate = buznextstate;
     end
 
-    always @(posedge clk_1KHz) begin
+    always @(posedge clk_1KHz, posedge rst_i, posedge trig_i) begin
         if (rst_i) begin
             buznextstate <= BUZ_IDLE;
             period <= '0;
@@ -52,6 +59,7 @@ module mod_buzzer
                     if (period == '0) begin
                         buznextstate <= BUZ_DONE;
                     end else begin
+                        period <= period - 1'b1;
                         pin_o = ~pin_o;
                     end
                 end

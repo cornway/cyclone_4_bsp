@@ -1,5 +1,5 @@
 module mod_por
-#(parameter POR_TICKS = 1000)
+#(parameter POR_TICKS = 4)
        (
             input logic clk_i,
 
@@ -37,11 +37,11 @@ module mod_presc
     always_ff @ (posedge clk_i) begin
         if (rst_i) begin
             clk_o <= '0;
-        end else if (presc >= presc_period_n2) begin
+        end else if (presc >= presc_period_n2 >> 1) begin
             presc <= '0;
+            clk_o <= ~clk_o;
         end else begin
             presc <= presc + 1'b1;
-            clk_o <= ~clk_o;
         end
     end
 

@@ -41,7 +41,7 @@ set_global_assignment -name DEVICE EP4CE6E22C8
 set_global_assignment -name TOP_LEVEL_ENTITY project
 set_global_assignment -name ORIGINAL_QUARTUS_VERSION 18.1.0
 set_global_assignment -name PROJECT_CREATION_TIME_DATE "15:43:08  JUNE 01, 2019"
-set_global_assignment -name LAST_QUARTUS_VERSION "19.1.0 Lite Edition"
+set_global_assignment -name LAST_QUARTUS_VERSION "18.1.0 Lite Edition"
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
 set_global_assignment -name MIN_CORE_JUNCTION_TEMP 0
 set_global_assignment -name MAX_CORE_JUNCTION_TEMP 85
@@ -61,7 +61,6 @@ set_location_assignment PIN_84 -to led_a_o
 set_global_assignment -name POWER_PRESET_COOLING_SOLUTION "23 MM HEAT SINK WITH 200 LFPM AIRFLOW"
 set_global_assignment -name POWER_BOARD_THERMAL_MODEL "NONE (CONSERVATIVE)"
 set_global_assignment -name QIP_FILE ip/pll/pll.qip
-set_global_assignment -name QIP_FILE ip/sdram/sdram.qip
 set_global_assignment -name SYSTEMVERILOG_FILE main/main.sv
 set_global_assignment -name SYSTEMVERILOG_FILE main/buzzer.sv
 set_global_assignment -name SYSTEMVERILOG_FILE main/button.sv
