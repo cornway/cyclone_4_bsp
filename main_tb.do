@@ -6,6 +6,7 @@ vlib rtl_work
 vmap work rtl_work
 
 vlog -work work ../../ip/pll/pll_bb.v
+vlog -work work ../../ip/pll2/pll2_bb.v
 
 vlog -work work ../../main/main.sv
 vlog -work work ../../main/misc.sv
@@ -23,7 +24,7 @@ view wave -undock
 add wave *
 add wave dut/*
 add wave dut/buzzer/*
-add wave dut/presc_1MHz/*
+add wave dut/mod_button_a/*
 
 run 4000ns
 

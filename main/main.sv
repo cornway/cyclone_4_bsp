@@ -7,24 +7,27 @@ module project
     input logic button_a_i,
 
     output logic buzz_o,
-    output logic led_a_o
+    output logic led_a_o,
+
+    input logic clk_sim_200MHz,
+    input logic clk_sim_4MHz
 );
 
     logic device_ready;
+	 logic pll_locked, pll2_locked;
 
     logic por_reset;
 
-    logic pll_clock_o;
-    logic[9 : 0] clock_presc = '0;
-    logic clock_200MHz;
-    logic clock_button;
-    logic clock_1MHz;
-    logic clock_core;
+    logic clk_pll_200MHz;
+    logic clk_200MHz;
+
+    logic clk_pll_4MHz;
+    logic clk_4MHz;
 
     logic button_a;
 
-    assign clock_200MHz = simulation ? clk_50MHz : pll_clock_o;
-    assign clock_core = clock_200MHz;
+    assign clk_200MHz = simulation ? clk_sim_200MHz : clk_pll_200MHz;
+    assign clk_4MHz = simulation ? clk_sim_4MHz : clk_pll_4MHz;
 
     mod_por por
         (
@@ -32,60 +35,49 @@ module project
             .rst_o  (por_reset)
          );
 
-    logic pll_locked;
+    assign device_ready = simulation ? '1 : pll_locked && pll2_locked;
 
-    assign device_ready = simulation ? '1 : pll_locked;
-
-    assign clock_button = clock_presc[7];
-
-    assign led_a_o = button_a;
-
-    always_ff @ (posedge clock_200MHz) begin
-        clock_presc <= clock_presc + 1'b1;
-    end
-
-    pll pll_main
+    pll pll_200MHz
         (
             .areset     (por_reset),
             .inclk0     (clk_50MHz),
-            .c0         (pll_clock_o),
+            .c0         (clk_pll_200MHz),
             .locked     (pll_locked)
         );
-
-    mod_presc presc_1MHz
+    pll2 pll_4MmHz
         (
-            .clk_i      (clock_200MHz),
-            .presc_i    (simulation ? 50 : 200),
-            .rst_i      (por_reset),
-            .clk_o      (clock_1MHz)
+            .areset     (por_reset),
+            .inclk0     (clk_50MHz),
+            .c0         (clk_pll_4MHz),
+            .locked     (pll2_locked)
         );
 
     logic buz_trig = '0;
     logic buz_busy;
+    assign led_a_o = !buz_busy;
 
     mod_buzzer
     #(
         .simulation(simulation)
     ) buzzer (
-            .clk_i_1MHz     (clock_1MHz),
-            .period_ms_i    (simulation ? 10 : 1000),
+            .clk_4M_i       (clk_4MHz),
+            .period_ms_i    (simulation ? 10 : 600),
             .trig_i         (buz_trig),
             .rst_i          (por_reset),
-            .pin_act_lvl_i  ('1),
             .cyc_o          (buz_busy),
             .pin_o          (buzz_o)
         );
 
     mod_button mod_button_a
         (
-            .clk_i          (clock_button),
+            .clk_i          (clk_4MHz),
             .pin_i          (button_a_i),
             .pin_o          (button_a)
         );
 
-    always_ff @ (posedge clock_core) begin
+    always_ff @ (posedge clk_4MHz) begin
         if (!buz_busy) begin
-            buz_trig <= simulation ? button_a_i : button_a;
+            buz_trig <= button_a;
         end else begin
             buz_trig <= '0;
         end

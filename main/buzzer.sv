@@ -1,74 +1,71 @@
 
 module mod_buzzer
 #(
-    parameter BUZ_PERIOD_MS = 3000,
     parameter simulation = 0
 )
     (
-        input logic clk_i_1MHz,
-        input logic[$clog2(BUZ_PERIOD_MS) : 0] period_ms_i,
+        input logic clk_4M_i,
+        input logic[31 : 0] period_ms_i,
         input logic trig_i,
         input logic rst_i,
-        input logic pin_act_lvl_i,
 
         output logic cyc_o,
         output logic pin_o
     );
 
-    logic clk_1KHz;
-    logic[$clog2(1000) : 0] clk_presc = '0;
-    logic[$clog2(BUZ_PERIOD_MS) : 0] period = '0;
+    logic pin_int = '0, pin_int_sim = '0;
+    logic[10 : 0] clk_4M_cnt = '0;
+    logic[31 : 0] period = '0;
 
-    enum logic[1 : 0] {BUZ_IDLE, BUZ_BEEP, BUZ_DONE} buzstate     = BUZ_IDLE,
-                                                     buznextstate = BUZ_IDLE;
-    always_comb begin
+    enum logic[1 : 0] {state_idle, state_beep, state_done} beep_state     = state_idle,
+                                                     beep_state_next = state_idle;
+
+    always_ff @(posedge clk_4M_i) begin
         if (simulation) begin
-            clk_1KHz = clk_i_1MHz;
-        end else begin
-            clk_1KHz = clk_presc[$clog2(1000) - 1];
+            pin_int_sim <= ~pin_int_sim;
         end
     end
 
-    always_ff @(posedge clk_i_1MHz) begin
-        clk_presc <= clk_presc + 1'b1;
-    end
+    assign pin_o = simulation ? pin_int_sim : pin_int;
 
     always_comb begin
-        buzstate = buznextstate;
+        beep_state = beep_state_next;
     end
 
-    always @(posedge clk_1KHz, posedge rst_i, posedge trig_i) begin
+    always @(posedge clk_4M_i, posedge rst_i) begin
         if (rst_i) begin
-            buznextstate <= BUZ_IDLE;
-            period <= '0;
+            beep_state_next <= state_idle;
             cyc_o <= '0;
-            pin_o <= ~pin_act_lvl_i;
+            period <= '0;
         end else begin
-            case (buzstate)
-                BUZ_IDLE :
+            case (beep_state)
+                state_idle :
                 begin
                     if (trig_i) begin
-                        period <= period_ms_i;
-                        pin_o <= ~pin_act_lvl_i;
                         cyc_o <= '1;
-                        buznextstate <= BUZ_BEEP;
+                        period <= period_ms_i;
+                        clk_4M_cnt <= '0;
+                        beep_state_next <= state_beep;
                     end
                 end
-                BUZ_BEEP :
+                state_beep :
                 begin
                     if (period == '0) begin
-                        buznextstate <= BUZ_DONE;
+                        beep_state_next <= state_done;
                     end else begin
-                        period <= period - 1'b1;
-                        pin_o = ~pin_o;
+                        if (clk_4M_cnt == (simulation ? 10 : 2000)) begin
+                            clk_4M_cnt <= '0;
+                            period <= period - pin_int;
+                            pin_int <= ~pin_int;
+                        end else begin
+                            clk_4M_cnt <= clk_4M_cnt + 1'b1;
+                        end
                     end
                 end
-                BUZ_DONE :
+                state_done :
                 begin
-                    period <= '0;
                     cyc_o <= '0;
-                    pin_o <= ~pin_act_lvl_i;
-                    buznextstate <= BUZ_IDLE;
+                    beep_state_next <= state_idle;
                 end
             endcase
         end
