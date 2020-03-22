@@ -60,10 +60,13 @@ set_location_assignment PIN_88 -to button_a_i
 set_location_assignment PIN_84 -to led_a_o
 set_global_assignment -name POWER_PRESET_COOLING_SOLUTION "23 MM HEAT SINK WITH 200 LFPM AIRFLOW"
 set_global_assignment -name POWER_BOARD_THERMAL_MODEL "NONE (CONSERVATIVE)"
+set_location_assignment PIN_110 -to buzz_o
 set_global_assignment -name QIP_FILE ip/pll2/pll2.qip
 set_global_assignment -name QIP_FILE ip/pll/pll.qip
 set_global_assignment -name SYSTEMVERILOG_FILE main/main.sv
 set_global_assignment -name SYSTEMVERILOG_FILE main/buzzer.sv
 set_global_assignment -name SYSTEMVERILOG_FILE main/button.sv
 set_global_assignment -name SYSTEMVERILOG_FILE main/misc.sv
+set_global_assignment -name QIP_FILE sqrt.qip
+set_global_assignment -name SYSTEMVERILOG_FILE ip/sdram/stffrdhrn_sdram.sv
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
