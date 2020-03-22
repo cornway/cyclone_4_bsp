@@ -61,6 +61,11 @@ module project
 
     output logic[3:0] switch,
 
+    input logic spi2_sck,
+    input logic spi2_cs,
+    input logic spi2_mosi,
+    output logic spi2_miso,
+
     input logic clk_sim_200MHz,
     input logic clk_sim_4MHz
 );
@@ -76,10 +81,18 @@ module project
     logic clk_pll_4MHz;
     logic clk_4MHz;
 
+    logic clk_100MHz = '0;
+    logic clk_25MHz = '0;
+
     logic button_a;
+
+    wire reset = por_reset;
 
     assign clk_200MHz = simulation ? clk_sim_200MHz : clk_pll_200MHz;
     assign clk_4MHz = simulation ? clk_sim_4MHz : clk_pll_4MHz;
+
+    always_ff @(posedge clk_50MHz) clk_25MHz <= ~clk_25MHz;
+    always_ff @(posedge clk_200MHz) clk_100MHz <= ~clk_100MHz;
 
     mod_por por
         (
@@ -137,6 +150,10 @@ module project
 
     sdram_iface_host_t sdram_if_host();
 
+    assign sdram_if_host.clk = clk_100MHz;
+    assign sdram_if_host.rst_n = ~reset;
+    assign sd_clk = sdram_if_host.clk;
+
     sdram_controller sdram_uc
         (
             .wr_addr(sdram_if_host.wr_addr),
@@ -163,5 +180,153 @@ module project
             .data_mask_low(sd_ldqm),
             .data_mask_high(sd_udqm)
         );
+
+    spi_phy_if spi2_phy_if();
+    spi_host_if spi2_host_if();
+
+    assign spi2_phy_if.sck = spi2_sck;
+    assign spi2_phy_if.cs = spi2_cs;
+    assign spi2_phy_if.mosi = spi2_mosi;
+    assign spi2_miso = spi2_phy_if.miso;
+
+    assign spi2_host_if.clk_i = clk_100MHz;
+
+    spi_16bit_slave spi_16bit_slave_2
+        (
+            .phy(spi2_phy_if),
+            .spi_host(spi2_host_if),
+
+            .conf_cpol('0),
+            .conf_dir('0),
+            .conf_cpha('0),
+
+            .port_prescaler(5'd4),
+            .port_bit_count(4'd16)
+        );
+
+    logic[7:0] spi_io_addr;
+
+    logic[31:0] mem_addr = '0;
+    logic[15:0] mem_dat;
+    logic[15:0] mem_dat_o[2]; 
+    logic[1:0] mem_write_delay = '0;
+
+    enum logic[3 : 0]
+        {state_idle,
+        state_read,
+        state_write,
+        state_mem_addr_lo,
+        state_mem_addr_hi,
+        state_mem_dat_lo,
+        state_mem_read,
+        state_mem_read_ack,
+        state_mem_write,
+        state_mem_write_ack
+        } spi2_state = state_idle,
+          spi2_state_next = state_idle,
+          spi2_prev_state = state_idle;
+
+    wire[7:0] spi2_ctl = spi2_host_if.dat_i[15:8];
+    logic spi2_sm_reset;
+
+    assign spi2_sm_reset = reset;
+
+    always_ff @(posedge clk_50MHz) begin
+        if (spi2_sm_reset) begin
+            spi2_state <= state_idle;
+
+            sdram_if_host.wr_data <= '0;
+            sdram_if_host.wr_addr <= '0;
+            sdram_if_host.rd_addr <= '0;
+            sdram_if_host.wr_enable <= '0;
+            sdram_if_host.rd_enable <= '0;
+
+        end else if (spi2_host_if.wr_req_ack) begin
+            case (spi2_state)
+                state_idle:
+                    case (spi2_ctl)
+                        8'h80: begin
+                            spi_io_addr <= spi2_host_if.dat_i[7:0];
+                            spi2_state <= state_read;
+                        end
+                        8'hC0: begin
+                            spi2_state <= state_mem_addr_lo;
+                            spi2_state_next <= state_mem_read;
+                        end
+                        8'hC1: begin
+                            spi2_state <= state_mem_addr_lo;
+                            spi2_state_next <= state_mem_dat_lo;
+                        end
+                        default: begin
+                        end
+                    endcase
+                state_mem_addr_lo: begin
+                    mem_addr[15:0] <= spi2_host_if.dat_i;
+                    spi2_state <= state_mem_addr_hi;
+                end
+                state_mem_addr_hi: begin
+                    mem_addr[31:16] <= spi2_host_if.dat_i;
+                    spi2_state <= spi2_state_next;
+                end
+                state_mem_dat_lo: begin
+                    spi2_state <= state_mem_write;
+                    mem_dat <= spi2_host_if.dat_i;
+                end
+                state_read: begin
+                    spi2_state <= state_idle;
+                end
+                state_write: begin
+                    spi2_state <= state_idle;
+                end
+            endcase
+        end else case (spi2_state)
+            state_mem_write: begin
+                sdram_if_host.wr_addr <= mem_addr;
+                sdram_if_host.wr_data <= mem_dat;
+                sdram_if_host.wr_enable <= '1;
+                mem_write_delay <= 2'd2;
+                spi2_state <= state_mem_write_ack;
+            end
+            state_mem_write_ack: begin
+                if (mem_write_delay) begin
+                    mem_write_delay <= mem_write_delay - 1'b1;
+                end else begin
+                    spi2_state <= state_idle;
+                end
+            end
+            state_mem_read: begin
+                if (!sdram_if_host.rd_ready) begin
+                    sdram_if_host.rd_addr <= mem_addr;
+                    sdram_if_host.rd_enable <= '1;
+                    spi2_state <= state_mem_read_ack;
+                end
+            end
+            state_mem_read_ack: begin
+                if (sdram_if_host.rd_ready) begin
+                    mem_dat <= sdram_if_host.rd_data;
+                    spi2_state <= state_idle;
+                end
+            end
+        endcase
+
+        spi2_host_if.wr_req_ack <= spi2_host_if.wr_req;
+        if (sdram_if_host.rd_enable)
+            sdram_if_host.rd_enable <= '0;
+        if (sdram_if_host.wr_enable)
+            sdram_if_host.wr_enable <= '0;
+    end
+
+    always_comb begin
+        case (spi_io_addr)
+            8'h00:
+                spi2_host_if.dat_o = 16'h5555;
+            8'h04:
+                spi2_host_if.dat_o = mem_dat[7:0];
+            8'h05:
+                spi2_host_if.dat_o = mem_dat[15:8];
+            default:
+                spi2_host_if.dat_o = '0;
+        endcase
+    end
 
 endmodule

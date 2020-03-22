@@ -60,6 +60,8 @@ sdram_iface_t sdram_if();
 sdram_iface_t sdram_dut_if();
 sdram_iface_host_t sdram_if_host();
 
+spi_phy_if spi_phy_if_inst();
+
 	project
 		#(
 			.simulation(1)
@@ -84,12 +86,22 @@ sdram_iface_host_t sdram_if_host();
 			.sd_udqm(sdram_dut_if.Dqm[1]),
 			.sd_bs0(sdram_dut_if.Ba[0]),
 			.sd_bs1(sdram_dut_if.Ba[1]),
-			.sd_sa(sdram_dut_if.Addr)
+			.sd_sa(sdram_dut_if.Addr),
+
+			.spi2_sck(spi_phy_if_inst.sck),
+			.spi2_cs(spi_phy_if_inst.cs),
+			.spi2_mosi(spi_phy_if_inst.mosi),
+			.spi2_miso(spi_phy_if_inst.miso)
 		);
 
 	sdram_phy_if sdram_phy_if_inst
 		(
 			.phy(sdram_if)
+		);
+
+	sdram_phy_if sdram_dut_phy_if_inst
+		(
+			.phy(sdram_dut_if)
 		);
 
 	assign sdram_if.Clk = sdram_if_host.clk;
@@ -135,6 +147,61 @@ sdram_iface_host_t sdram_if_host();
 			.rst_n(sdram_if_host.rst_n),
 			.clk(sdram_if_host.clk)
 		);
+
+	logic[15:0] spi2_xchg_data;
+
+	task spi2_xchg_u16 (bit[15:0] data);
+
+	begin
+		automatic bit[15:0] data_o = '0;
+		automatic bit[15:0] data_int = data;
+
+		repeat (2) @(posedge clk_50M);
+		spi_phy_if_inst.cs <= '0;
+		spi_phy_if_inst.sck <= '0;
+
+		repeat (16) begin
+			{spi_phy_if_inst.mosi, data_int[15:1]} = data_int;
+			#40;
+			spi_phy_if_inst.sck <= '1;
+			#40;
+			data_o = {data_o[14:0], spi_phy_if_inst.miso};
+			spi_phy_if_inst.sck <= '0;
+		end
+		@(posedge clk_50M);
+		spi_phy_if_inst.sck <= '0;
+		spi_phy_if_inst.cs <= '1;
+		spi2_xchg_data <= data_o;
+		#40;
+	end
+	endtask
+
+	task spi2_read_u16 (bit[7:0] addr);
+		spi2_xchg_u16({8'h80, addr});
+		spi2_xchg_u16('0);
+	endtask
+
+	task spi2_read_mem_u16 (bit[31:0] addr);
+		spi2_xchg_u16(16'hC000);
+		spi2_xchg_u16(addr[15:0]);
+		spi2_xchg_u16(addr[31:16]);
+	endtask
+
+	task spi2_write_mem_u16 (bit[31:0] addr, bit[15:0] data);
+		spi2_xchg_u16(16'hC100);
+		spi2_xchg_u16(addr[15:0]);
+		spi2_xchg_u16(addr[31:16]);
+		spi2_xchg_u16(data);
+	endtask
+
+	initial begin
+		spi_phy_if_inst.cs <= '1;
+		#100;
+		spi2_write_mem_u16('0, 16'h1234);
+		spi2_write_mem_u16(10, 16'h7777);
+		spi2_read_mem_u16('0);
+		spi2_read_mem_u16(10);
+	end
 
 endmodule
 

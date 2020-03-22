@@ -13,6 +13,8 @@ vlog -work work ../../main/main.sv
 vlog -work work ../../main/misc.sv
 vlog -work work ../../main/button.sv
 vlog -work work ../../main/buzzer.sv
+vlog -work work ../../common/utils/spi.sv
+vlog -work work ../../common/utils/primitives.sv
 
 vlog -work work ../../main/tb.sv
 vlog -work work ../../sim/sdram_sim.v
@@ -24,10 +26,11 @@ view locals
 
 view wave -undock
 
-add wave *
-add wave sdram_if_host/*
-add wave sdram_uc/*
-add wave sdram_if/*
+add wave sdram_dut_if/*
+add wave dut/spi2_host_if/*
+add wave dut/sdram_if_host/*
+add wave dut/mem*
+add wave dut/spi2*
 
-run 20000ns
+run 30000ns
 
