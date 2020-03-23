@@ -78,7 +78,7 @@ interface sdram_iface_sim_host_t;
 endinterface
 
 
-module sdram_phy_if (sdram_iface_t phy);
+module sdram_phy_if (sdram_phy_if_t phy);
 
 	mt48lc8m16a2 mt48lc8m16a2_if
 	(
@@ -132,8 +132,8 @@ initial begin
 	button_a <= '0;
 end
 
-sdram_iface_t sdram_if();
-sdram_iface_t sdram_dut_if();
+sdram_phy_if_t sdram_if();
+sdram_phy_if_t sdram_dut_if();
 sdram_iface_sim_host_t sdram_if_host();
 
 spi_phy_sim_if spi_phy_if_inst(clk_50M);
@@ -151,18 +151,8 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
 
 			//output logic buzz_o,
 			//output logic led_a_o
-			.sd_dq(sdram_dut_if.Dq),
-			.sd_cke(sdram_dut_if.Cke),
-			.sd_clk(sdram_dut_if.Clk),
-			.sd_cs(sdram_dut_if.Cs_n),
-			.sd_ras(sdram_dut_if.Ras_n),
-			.sd_cas(sdram_dut_if.Cas_n),
-			.sd_we(sdram_dut_if.We_n),
-			.sd_ldqm(sdram_dut_if.Dqm[0]),
-			.sd_udqm(sdram_dut_if.Dqm[1]),
-			.sd_bs0(sdram_dut_if.Ba[0]),
-			.sd_bs1(sdram_dut_if.Ba[1]),
-			.sd_sa(sdram_dut_if.Addr),
+
+			.sdram_phy(sdram_dut_if),
 
 			.spi2_sck(spi_phy_if_inst.sck),
 			.spi2_cs(spi_phy_if_inst.cs),

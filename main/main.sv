@@ -1,32 +1,4 @@
 
-interface sdram_iface_t;
-	wire[15:0] Dq;
-	logic[11:0] Addr;
-	logic[1:0] Ba;
-	logic Clk;
-	logic Cke;
-	logic Cs_n;
-	logic Ras_n;
-	logic Cas_n;
-	logic We_n;
-	logic[1:0] Dqm;
-endinterface
-
-interface sdram_iface_host_t;
-	logic[31:0] wr_addr;
-    logic[15:0] wr_data;
-    logic wr_enable;
-
-    logic[31:0] rd_addr;
-    logic[15:0] rd_data;
-    logic rd_ready;
-    logic rd_enable;
-
-    logic busy;
-    logic rst_n;
-    logic clk;
-endinterface
-
 module project
 #(parameter simulation = 0)
 (
@@ -43,18 +15,7 @@ module project
     output logic led_c_o,
     output logic led_d_o,
 
-    inout wire[15:0] sd_dq,
-    output logic sd_cke,
-    output logic sd_clk,
-    output logic sd_cs,
-    output logic sd_ras,
-    output logic sd_cas,
-    output logic sd_we,
-    output logic sd_ldqm,
-    output logic sd_udqm,
-    output logic sd_bs0,
-    output logic sd_bs1,
-    output logic[0:11] sd_sa,
+    sdram_phy_if_t sdram_phy,
 
     output logic[7:0] lcd_seg,
     output logic[3:0] lcd_dig,
@@ -71,7 +32,7 @@ module project
 );
 
     logic device_ready;
-	 logic pll_locked, pll2_locked;
+    logic pll_locked, pll2_locked;
 
     logic por_reset;
 
@@ -148,37 +109,14 @@ module project
         end
     end
 
-    sdram_iface_host_t sdram_if_host();
+    sdram_wif_t sdram_wif();
 
-    assign sdram_if_host.clk = clk_50MHz;
-    assign sdram_if_host.rst_n = ~reset;
-    assign sd_clk = sdram_if_host.clk;
+    assign sdram_wif.clk_i = clk_50MHz;
 
-    sdram_controller sdram_uc
+    sdram_wish_if sdram_wish_if_inst
         (
-            .wr_addr(sdram_if_host.wr_addr),
-            .wr_data(sdram_if_host.wr_data),
-            .wr_enable(sdram_if_host.wr_enable),
-            .rd_addr(sdram_if_host.rd_addr),
-            .rd_data(sdram_if_host.rd_data),
-            .rd_ready(sdram_if_host.rd_ready),
-            .rd_enable(sdram_if_host.rd_enable),
-
-            .busy(sdram_if_host.busy),
-            .rst_n(sdram_if_host.rst_n),
-            .clk(sdram_if_host.clk),
-
-            /* SDRAM SIDE */
-            .addr(sd_sa),
-            .bank_addr({sd_bs1, sd_bs0}),
-            .data(sd_dq),
-            .clock_enable(sd_cke),
-            .cs_n(sd_cs),
-            .ras_n(sd_ras),
-            .cas_n(sd_cas),
-            .we_n(sd_we),
-            .data_mask_low(sd_ldqm),
-            .data_mask_high(sd_udqm)
+            .wif(sdram_wif),
+            .phy(sdram_phy)
         );
 
     spi_phy_if spi2_phy_if();
@@ -230,16 +168,16 @@ module project
     logic spi2_sm_reset;
 
     assign spi2_sm_reset = reset;
+    assign sdram_wif.rst_i = reset;
 
     always_ff @(posedge clk_50MHz) begin
         if (spi2_sm_reset) begin
             spi2_state <= state_idle;
 
-            sdram_if_host.wr_data <= '0;
-            sdram_if_host.wr_addr <= '0;
-            sdram_if_host.rd_addr <= '0;
-            sdram_if_host.wr_enable <= '0;
-            sdram_if_host.rd_enable <= '0;
+            sdram_wif.dat_i <= '0;
+            sdram_wif.addr_i <= '0;
+            sdram_wif.stb_i <= '0;
+            sdram_wif.we_i <= '0;
 
         end else if (spi2_host_if.wr_req_ack) begin
             case (spi2_state)
@@ -281,39 +219,39 @@ module project
             endcase
         end else case (spi2_state)
             state_mem_write: begin
-                sdram_if_host.wr_addr <= mem_addr;
-                sdram_if_host.wr_data <= mem_dat;
-                sdram_if_host.wr_enable <= '1;
-                mem_write_delay <= 2'd2;
-                spi2_state <= state_mem_write_ack;
+                if (!sdram_wif.cyc_o) begin
+                    sdram_wif.addr_i <= mem_addr;
+                    sdram_wif.dat_i <= mem_dat;
+                    sdram_wif.stb_i <= '1;
+                    mem_write_delay <= 2'd2;
+                    sdram_wif.we_i <= '1;
+                    spi2_state <= state_mem_write_ack;
+                end
             end
             state_mem_write_ack: begin
-                if (mem_write_delay) begin
-                    mem_write_delay <= mem_write_delay - 1'b1;
-                end else begin
+                if (!sdram_wif.cyc_o) begin
+                    sdram_wif.we_i <= '0;
                     spi2_state <= state_idle;
                 end
             end
             state_mem_read: begin
-                if (!sdram_if_host.rd_ready) begin
-                    sdram_if_host.rd_addr <= mem_addr;
-                    sdram_if_host.rd_enable <= '1;
+                if (!sdram_wif.cyc_o) begin
+                    sdram_wif.addr_i <= mem_addr;
+                    sdram_wif.stb_i <= '1;
                     spi2_state <= state_mem_read_ack;
                 end
             end
             state_mem_read_ack: begin
-                if (sdram_if_host.rd_ready) begin
-                    mem_dat <= sdram_if_host.rd_data;
+                if (!sdram_wif.cyc_o) begin
+                    mem_dat <= sdram_wif.dat_o;
                     spi2_state <= state_idle;
                 end
             end
         endcase
 
         spi2_host_if.wr_req_ack <= spi2_host_if.wr_req;
-        if (sdram_if_host.rd_enable)
-            sdram_if_host.rd_enable <= '0;
-        if (sdram_if_host.wr_enable)
-            sdram_if_host.wr_enable <= '0;
+        if (sdram_wif.stb_i)
+            sdram_wif.stb_i <= '0;
     end
 
     always_comb begin
