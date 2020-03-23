@@ -1,6 +1,82 @@
 
 `timescale 1ns/1ns
 
+interface spi_phy_sim_if(input clock);
+    bit sck;
+    bit mosi;
+    bit miso;
+    bit cs;
+
+    task xchg_u16 (bit[15:0] data, output bit[15:0] data_o);
+		automatic bit[15:0] data_int = data;
+
+		repeat (2) @(posedge clock);
+		cs = '0;
+		sck = '0;
+
+		repeat (16) begin
+			{mosi, data_int[15:1]} = data_int;
+			#40;
+			sck = '1;
+			#40;
+			data_o = {data_o[14:0], miso};
+			sck = '0;
+		end
+		#40;
+		sck = '0;
+		cs = '1;
+		@(posedge clock);
+	endtask
+endinterface
+
+interface sdram_iface_sim_host_t;
+	logic[31:0] wr_addr;
+    logic[15:0] wr_data;
+    logic wr_enable;
+
+    logic[31:0] rd_addr;
+    logic[15:0] rd_data;
+    logic rd_ready;
+    logic rd_enable;
+
+    logic busy;
+    logic rst_n;
+    logic clk;
+
+	task test ();
+		logic[15:0] data;
+
+		wr_data 	<= '0;
+		wr_enable 	<= '0;
+		rd_addr 	<= '0;
+		rd_enable 	<= '0;
+		rst_n 		<= '0;
+
+		#100;
+		rst_n <= '1;
+
+		#2000
+		wait(!busy); @(posedge clk);
+
+		wr_addr 	<= '0;
+		wr_enable 	<= '1;
+		wr_data 	<= 16'h5555;
+
+		@(posedge clk);
+		wr_enable 	<= '0;
+
+		#2000
+		wait(!busy); @(posedge clk);
+		rd_addr 	<= '0;
+		rd_enable 	<= '1;
+
+		@(posedge clk);
+		rd_enable 	<= '0;
+
+		wait(!rd_ready);
+	endtask
+endinterface
+
 
 module sdram_phy_if (sdram_iface_t phy);
 
@@ -58,9 +134,9 @@ end
 
 sdram_iface_t sdram_if();
 sdram_iface_t sdram_dut_if();
-sdram_iface_host_t sdram_if_host();
+sdram_iface_sim_host_t sdram_if_host();
 
-spi_phy_if spi_phy_if_inst();
+spi_phy_sim_if spi_phy_if_inst(clk_50M);
 
 	project
 		#(
@@ -132,67 +208,29 @@ spi_phy_if spi_phy_if_inst();
             .data_mask_high(sdram_if.Dqm[1])
         );
 
-	sdram_test sdram_test_inst
-		(
-			.wr_addr(sdram_if_host.wr_addr),
-			.wr_data(sdram_if_host.wr_data),
-			.wr_enable(sdram_if_host.wr_enable),
-
-			.rd_addr(sdram_if_host.rd_addr),
-			.rd_data(sdram_if_host.rd_data),
-			.rd_ready(sdram_if_host.rd_ready),
-			.rd_enable(sdram_if_host.rd_enable),
-
-			.busy(sdram_if_host.busy),
-			.rst_n(sdram_if_host.rst_n),
-			.clk(sdram_if_host.clk)
-		);
-
-	logic[15:0] spi2_xchg_data;
-
-	task spi2_xchg_u16 (bit[15:0] data);
-
-	begin
-		automatic bit[15:0] data_o = '0;
-		automatic bit[15:0] data_int = data;
-
-		repeat (2) @(posedge clk_50M);
-		spi_phy_if_inst.cs <= '0;
-		spi_phy_if_inst.sck <= '0;
-
-		repeat (16) begin
-			{spi_phy_if_inst.mosi, data_int[15:1]} = data_int;
-			#40;
-			spi_phy_if_inst.sck <= '1;
-			#40;
-			data_o = {data_o[14:0], spi_phy_if_inst.miso};
-			spi_phy_if_inst.sck <= '0;
-		end
-		@(posedge clk_50M);
-		spi_phy_if_inst.sck <= '0;
-		spi_phy_if_inst.cs <= '1;
-		spi2_xchg_data <= data_o;
-		#40;
-	end
-	endtask
+	logic[15:0] spi2_xchg_data = '0;
 
 	task spi2_read_u16 (bit[7:0] addr);
-		spi2_xchg_u16({8'h80, addr});
-		spi2_xchg_u16('0);
+		spi_phy_if_inst.xchg_u16({8'h80, addr}, spi2_xchg_data);
+		spi_phy_if_inst.xchg_u16('0, spi2_xchg_data);
 	endtask
 
 	task spi2_read_mem_u16 (bit[31:0] addr);
-		spi2_xchg_u16(16'hC000);
-		spi2_xchg_u16(addr[15:0]);
-		spi2_xchg_u16(addr[31:16]);
+		spi_phy_if_inst.xchg_u16(16'hC000, spi2_xchg_data);
+		spi_phy_if_inst.xchg_u16(addr[15:0], spi2_xchg_data);
+		spi_phy_if_inst.xchg_u16(addr[31:16], spi2_xchg_data);
 	endtask
 
 	task spi2_write_mem_u16 (bit[31:0] addr, bit[15:0] data);
-		spi2_xchg_u16(16'hC100);
-		spi2_xchg_u16(addr[15:0]);
-		spi2_xchg_u16(addr[31:16]);
-		spi2_xchg_u16(data);
+		spi_phy_if_inst.xchg_u16(16'hC100, spi2_xchg_data);
+		spi_phy_if_inst.xchg_u16(addr[15:0], spi2_xchg_data);
+		spi_phy_if_inst.xchg_u16(addr[31:16], spi2_xchg_data);
+		spi_phy_if_inst.xchg_u16(data, spi2_xchg_data);
 	endtask
+
+	initial begin
+		sdram_if_host.test();
+	end
 
 	initial begin
 		spi_phy_if_inst.cs <= '1;
@@ -203,54 +241,4 @@ spi_phy_if spi_phy_if_inst();
 		spi2_read_mem_u16(10);
 	end
 
-endmodule
-
-
-module sdram_test
-	(
-		output logic[31:0] wr_addr,
-		output logic[15:0] wr_data,
-		output logic wr_enable,
-
-		output logic[31:0] rd_addr,
-		output logic[15:0] rd_data,
-		input logic rd_ready,
-		output logic rd_enable,
-
-		input logic busy,
-		output logic rst_n,
-		input logic clk
-	);
-	logic[15:0] data;
-
-	initial begin
-		wr_data 	<= '0;
-		wr_enable 	<= '0;
-		rd_addr 	<= '0;
-		rd_enable 	<= '0;
-		rst_n 		<= '0;
-
-		#100;
-		rst_n <= '1;
-
-		#2000
-		wait(!busy); @(posedge clk);
-
-		wr_addr 	<= '0;
-		wr_enable 	<= '1;
-		wr_data 	<= 16'h5555;
-
-		@(posedge clk);
-		wr_enable 	<= '0;
-
-		#2000
-		wait(!busy); @(posedge clk);
-		rd_addr 	<= '0;
-		rd_enable 	<= '1;
-
-		@(posedge clk);
-		rd_enable 	<= '0;
-
-		wait(!rd_ready);
-	end
 endmodule

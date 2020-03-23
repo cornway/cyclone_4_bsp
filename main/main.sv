@@ -150,7 +150,7 @@ module project
 
     sdram_iface_host_t sdram_if_host();
 
-    assign sdram_if_host.clk = clk_100MHz;
+    assign sdram_if_host.clk = clk_50MHz;
     assign sdram_if_host.rst_n = ~reset;
     assign sd_clk = sdram_if_host.clk;
 
@@ -189,7 +189,7 @@ module project
     assign spi2_phy_if.mosi = spi2_mosi;
     assign spi2_miso = spi2_phy_if.miso;
 
-    assign spi2_host_if.clk_i = clk_100MHz;
+    assign spi2_host_if.clk_i = clk_50MHz;
 
     spi_16bit_slave spi_16bit_slave_2
         (
