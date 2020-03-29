@@ -108,6 +108,17 @@ module project
         end
     end
 
+    logic mb_trig = '0;
+    logic mb_cyc;
+    logic mb_stb;
+    logic mb_we_i = '0;
+    logic mb_seq = '0, mb_seq_ack;
+    logic[15:0] mb_length = '0;
+    logic[31:0] mb_addr = '0;
+    logic[15:0] mb_data = '0;
+    logic[15:0] mb_data_o;
+
+    mem_wif_t mb_mem_wif();
     mem_wif_t mem_wif();
     mem_wif_t spi_mem_wif();
     mem_wif_t a_mem_wif();
@@ -121,10 +132,10 @@ module project
             .mem(mem_wif),
             .user_0(a_mem_wif),
             .user_1(spi_mem_wif),
-            .user_2(mem_user_2),
+            .user_2(mb_mem_wif),
             .user_3(mem_user_3),
 
-            .user_en(4'b0011)
+            .user_en(4'b0111)
         );
 
     sdram_wish_if sdram_wish_if_inst
@@ -164,17 +175,23 @@ module project
     logic[7:0] spi_io_addr;
 
     logic[31:0] mem_addr = '0;
-    logic[31:0] mem_dat;
+    logic[31:0] mem_dat = '0;
 
     enum logic[4 : 0]
         {state_idle,
         state_read,
         state_write,
+        state_mem_burst_init,
+        state_mem_burst_start,
+        state_mem_burst_next,
+        state_mem_burst_start_ack,
+        state_mem_burst_next_ack,
         state_mem_addr_lo,
         state_mem_addr_hi,
         state_mem_dat_lo,
         state_mem_read,
         state_mem_read_ack,
+        state_mem_read_ack2,
         state_mem_write,
         state_mem_write_ack,
         state_mix_wr_master_addr,
@@ -191,6 +208,7 @@ module project
     wire[7:0] spi2_ctl = spi2_host_if.dat_i[15:8];
     assign spi_mem_wif.rst_i = reset;
     assign a_mix_wif.rst_i = reset;
+    assign mb_mem_wif.rst_i = reset;
     assign a_mix_wif.clk_i = mem_wif.clk_i;
 
     always_ff @(posedge clk_50MHz) begin
@@ -207,6 +225,8 @@ module project
             a_mix_wif.addr_i <= '0;
             a_mix_wif.stb_i <= '0;
             a_mix_wif.we_i <= '1;
+
+            mb_stb <= '0;
 
         end else if (spi2_host_if.wr_req_ack) begin
             case (spi2_state)
@@ -230,9 +250,31 @@ module project
                         8'h91: begin
                             spi2_state <= state_mix_wr_addr;
                         end
+                        8'hD0: begin
+                            mb_we_i <= '1;
+                            spi2_state <= state_mem_burst_init;
+                        end
+                        8'hD1: begin
+                            mb_we_i <= '0;
+                            spi2_state <= state_mem_burst_init;
+                        end
                         default: begin
                         end
                     endcase
+                state_mem_burst_init: begin
+                    mb_length <= spi2_host_if.dat_i;
+                    spi2_state_next <= state_mem_burst_start;
+                    spi2_state <= state_mem_addr_lo;
+                end
+                state_mem_burst_next: begin
+                    if (!mb_cyc) begin
+                        spi2_state <= state_idle;
+                    end else begin 
+                        mb_seq <= '1;
+                        mb_data <= spi2_host_if.dat_i;
+                        spi2_state <= state_mem_burst_next_ack;
+                    end
+                end
                 state_mix_rd_addr: begin
                     a_mix_wif.addr_i <= spi2_host_if.dat_i[7:0];
                     a_mix_wif.stb_i <= '1;
@@ -262,7 +304,7 @@ module project
                 end
                 state_mem_dat_lo: begin
                     spi2_state <= state_mem_write;
-                    mem_dat <= spi2_host_if.dat_i;
+                    mem_dat[15:0] <= spi2_host_if.dat_i;
                 end
                 state_read: begin
                     spi2_state <= state_idle;
@@ -272,6 +314,31 @@ module project
                 end
             endcase
         end else case (spi2_state)
+            state_mem_burst_start: begin
+                if (!mb_cyc) begin
+                    mb_addr <= mem_addr;
+                    mb_stb <= '1;
+                    spi2_state <= state_mem_burst_start_ack;
+                end
+            end
+            state_mem_burst_next: begin
+                if (!mb_cyc) begin
+                    spi2_state <= state_idle;
+                end
+            end
+            state_mem_burst_start_ack: begin
+                if (mb_cyc) begin
+                    mb_stb <= '0;
+                    spi2_state <= state_mem_burst_next;
+                end
+            end
+            state_mem_burst_next_ack: begin
+                if (mb_seq_ack) begin
+                    mb_seq <= '0;
+                    mem_dat[15:0] <= mb_data_o;
+                    spi2_state <= state_mem_burst_next;
+                end
+            end
             state_mix_rd_ack: begin
                 a_mix_wif.stb_i <= '0;
                 if (a_mix_wif.stb_o) begin
@@ -291,7 +358,7 @@ module project
                     if (spi_mem_wif.ack_o) begin
                         spi_mem_wif.sel_i <= '1;
                         spi_mem_wif.addr_i <= mem_addr;
-                        spi_mem_wif.dat_o <= mem_dat;
+                        spi_mem_wif.dat_o <= mem_dat[15:0];
                         spi_mem_wif.stb_i <= '1;
                         spi_mem_wif.we_i <= '0;
                         spi2_state <= state_mem_write_ack;
@@ -301,8 +368,10 @@ module project
                 end
             end
             state_mem_write_ack: begin
-                if (!spi_mem_wif.cyc_o) begin
+                if (spi_mem_wif.stb_o) begin
                     spi_mem_wif.we_i <= '1;
+                    spi_mem_wif.addr_i <= '0;
+                    spi_mem_wif.dat_o <= '0;
                     spi2_state <= state_idle;
                 end
             end
@@ -319,8 +388,14 @@ module project
                 end
             end
             state_mem_read_ack: begin
+                if (spi_mem_wif.stb_o) begin
+                    spi2_state <= state_mem_read_ack2;
+                end
+            end
+            state_mem_read_ack2: begin
                 if (!spi_mem_wif.cyc_o) begin
-                    mem_dat <= {16'h0, spi_mem_wif.dat_i};
+                    mem_dat[15:0] <= spi_mem_wif.dat_i;
+                    spi_mem_wif.addr_i <= '0;
                     spi2_state <= state_idle;
                 end
             end
@@ -332,9 +407,17 @@ module project
     end
 
     always_comb begin
-        case (spi_io_addr)
+        if (mb_cyc) begin
+            spi2_host_if.dat_o = mem_dat[15:0];
+        end else case (spi_io_addr)
             8'h00:
                 spi2_host_if.dat_o = 16'h1234;
+            8'h01:
+                spi2_host_if.dat_o = 16'h5678;
+            8'h02:
+                spi2_host_if.dat_o = 16'h9abcd;
+            8'h03:
+                spi2_host_if.dat_o = 16'hef01;
             8'h04:
                 spi2_host_if.dat_o = mem_dat[15:0];
             8'h05:
@@ -343,5 +426,146 @@ module project
                 spi2_host_if.dat_o = '0;
         endcase
     end
+
+    mem_burst_if mem_burst_if_inst
+        (
+            .clk_i(mem_wif.clk_i),
+            .stb_i(mb_stb),
+            .seq_i(mb_seq),
+            .rst_i(reset),
+            .we_i(mb_we_i),
+            .cyc_o(mb_cyc),
+            .seq_o(mb_seq_ack),
+            .len_i(mb_length),
+            .dat_i(mb_data),
+            .dat_o(mb_data_o),
+            .addr_i(mb_addr),
+
+            .mem(mb_mem_wif)
+        );
+
+endmodule
+
+module mem_burst_if
+(
+    input logic clk_i,
+    input logic stb_i,
+    input logic seq_i,
+    input logic rst_i,
+    input logic we_i,
+    output logic cyc_o,
+    output logic seq_o,
+    input logic[15:0] len_i,
+    input logic[15:0] dat_i,
+    output logic[15:0] dat_o,
+    input logic[31:0] addr_i,
+
+    mem_wif_t.dev mem
+);
+
+enum logic[2:0] {
+    state_idle,
+    state_init,
+    state_seq,
+    state_req,
+    state_ack,
+    state_ack2,
+    state_ack3,
+    state_done
+} mb_state = state_idle;
+
+logic we_i_reg = '0;
+logic[31:0] addr_reg = '0;
+logic[15:0] data_reg = '0;
+logic[15:0] data_len = '0;
+
+always_ff @(posedge clk_i, posedge rst_i) begin
+    if (rst_i) begin
+        mb_state <= state_idle;
+        dat_o <= '0;
+        data_reg <= '0;
+        data_len <= '0;
+        we_i_reg <= '0;
+        addr_reg <= '0;
+        seq_o <= '0;
+        cyc_o <= '0;
+
+        mem.stb_i <= '0;
+        mem.we_i <= '1;
+        mem.sel_i <= '1;
+        mem.dat_o <= '0;
+        mem.addr_i <= '0;
+
+    end else begin
+        case (mb_state)
+            state_idle: begin
+                if (stb_i) begin
+                    data_len <= len_i;
+                    addr_reg <= addr_i;
+                    we_i_reg <= we_i;
+                    cyc_o <= '1;
+                    mb_state <= state_seq;
+                end
+            end
+            state_seq: begin
+                if (seq_i) begin
+                    data_reg <= dat_i;
+                    data_len <= data_len - 1'b1;
+                    addr_reg <= addr_reg + 1'b1;
+                    mb_state <= state_req;
+                end
+            end
+            state_req: begin
+                if (!mem.cyc_o) begin
+                    if (mem.ack_o) begin
+                        mem.sel_i <= '1;
+                        mem.stb_i <= '1;
+                        mem.we_i <= we_i_reg;
+                        mem.addr_i <= addr_reg;
+                        if (!we_i_reg) 
+                            mem.dat_o <= data_reg;
+                        mb_state <= state_ack;
+                    end else begin
+                        mem.sel_i <= '0;
+                    end
+                end
+            end
+            state_ack: begin
+                if (mem.stb_o) begin
+                    mem.stb_i <= '0;
+                    mb_state <= state_ack2;
+                end
+            end
+            state_ack2: begin
+                if (!mem.cyc_o) begin
+                    if (we_i_reg)
+                        data_reg <= mem.dat_i;
+                    seq_o <= '1;
+                    mem.dat_o <= '0;
+                    mem.addr_i <= '0;
+                    mem.we_i <= '1;
+                    if (data_len)
+                        mb_state <= state_ack3;
+                    else begin
+                        mb_state <= state_done;
+                    end
+                end
+            end
+            state_ack3: begin
+                if (!seq_i) begin
+                    seq_o <= '0;
+                    mb_state <= state_seq;
+                end
+            end
+            state_done: begin
+                if (!seq_i) begin
+                    cyc_o <= '0;
+                    seq_o <= '0;
+                    mb_state <= state_idle;
+                end
+            end
+        endcase
+    end
+end
 
 endmodule

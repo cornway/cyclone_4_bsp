@@ -219,6 +219,26 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
 		spi_phy_if_inst.xchg_u16(data, dummy);
 	endtask
 
+	task spi2_mem_burst_begin (bit[31:0] addr, bit[15:0] len, bit read);
+		automatic logic[15:0] dummy = 16'hd000;
+		dummy[8] = ~read;
+		spi_phy_if_inst.xchg_u16(dummy, dummy);
+		spi_phy_if_inst.xchg_u16(len, dummy);
+		spi_phy_if_inst.xchg_u16(addr[15:0], dummy);
+		spi_phy_if_inst.xchg_u16(addr[31:16], dummy);
+		if (read) begin
+			spi_phy_if_inst.xchg_u16('0, dummy);
+		end
+	endtask
+
+	task spi2_mem_burst_read (output logic[15:0] data);
+		spi_phy_if_inst.xchg_u16('0, data);
+	endtask
+
+	task spi2_mem_burst_write (bit[15:0] data);
+		spi_phy_if_inst.xchg_u16(data, data);
+	endtask
+
 	task spi2_write_mix (bit[7:0] addr, bit[31:0] data);
 		automatic logic[15:0] dummy;
 		spi_phy_if_inst.xchg_u16(16'h9100, dummy);
@@ -248,6 +268,20 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
 		spi2_write_mem_u16(10, 16'hef01);
 		spi2_read_mem_u16('0, data);
 		spi2_read_mem_u16(10, data);
+
+		#50;
+		spi2_mem_burst_begin(32'h20, 16'h4, '0);
+		spi2_mem_burst_write(16'hdead);
+		spi2_mem_burst_write(16'hbeef);
+		spi2_mem_burst_write(16'hbabe);
+		spi2_mem_burst_write(16'hbeef);
+
+		#50;
+		spi2_mem_burst_begin(32'h20, 16'h4, '1);
+		spi2_mem_burst_read(data[15:0]);
+		spi2_mem_burst_read(data[31:16]);
+		spi2_mem_burst_read(data[15:0]);
+		spi2_mem_burst_read(data[31:16]);
 		#50;
 		spi2_write_mix(8'h0, 32'h10);
 		spi2_write_mix(8'h1, 32'h4);
