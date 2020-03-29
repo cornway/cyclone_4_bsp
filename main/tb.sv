@@ -19,7 +19,7 @@ interface spi_phy_sim_if(input clock);
 			#40;
 			sck = '1;
 			#40;
-			data_o = {data_o[14:0], miso};
+			data_o = {miso, data_o[15:1]};
 			sck = '0;
 		end
 		#40;
@@ -198,37 +198,68 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
             .data_mask_high(sdram_if.Dqm[1])
         );
 
-	logic[15:0] spi2_xchg_data = '0;
-
-	task spi2_read_u16 (bit[7:0] addr);
-		spi_phy_if_inst.xchg_u16({8'h80, addr}, spi2_xchg_data);
-		spi_phy_if_inst.xchg_u16('0, spi2_xchg_data);
+	task spi2_read_u16 (bit[7:0] addr, output logic[15:0] data);
+		spi_phy_if_inst.xchg_u16({8'h80, addr}, data);
+		spi_phy_if_inst.xchg_u16('0, data);
 	endtask
 
-	task spi2_read_mem_u16 (bit[31:0] addr);
-		spi_phy_if_inst.xchg_u16(16'hC000, spi2_xchg_data);
-		spi_phy_if_inst.xchg_u16(addr[15:0], spi2_xchg_data);
-		spi_phy_if_inst.xchg_u16(addr[31:16], spi2_xchg_data);
+	task spi2_read_mem_u16 (bit[31:0] addr, output logic[15:0] data);
+		spi_phy_if_inst.xchg_u16(16'hC000, data);
+		spi_phy_if_inst.xchg_u16(addr[15:0], data);
+		spi_phy_if_inst.xchg_u16(addr[31:16], data);
+		spi_phy_if_inst.xchg_u16(0, data);
+		spi2_read_u16(8'h4, data);
 	endtask
 
 	task spi2_write_mem_u16 (bit[31:0] addr, bit[15:0] data);
-		spi_phy_if_inst.xchg_u16(16'hC100, spi2_xchg_data);
-		spi_phy_if_inst.xchg_u16(addr[15:0], spi2_xchg_data);
-		spi_phy_if_inst.xchg_u16(addr[31:16], spi2_xchg_data);
-		spi_phy_if_inst.xchg_u16(data, spi2_xchg_data);
+		automatic logic[15:0] dummy;
+		spi_phy_if_inst.xchg_u16(16'hC100, dummy);
+		spi_phy_if_inst.xchg_u16(addr[15:0], dummy);
+		spi_phy_if_inst.xchg_u16(addr[31:16], dummy);
+		spi_phy_if_inst.xchg_u16(data, dummy);
+	endtask
+
+	task spi2_write_mix (bit[7:0] addr, bit[31:0] data);
+		automatic logic[15:0] dummy;
+		spi_phy_if_inst.xchg_u16(16'h9100, dummy);
+		spi_phy_if_inst.xchg_u16(addr, dummy);
+		spi_phy_if_inst.xchg_u16(data[15:0], dummy);
+		spi_phy_if_inst.xchg_u16(data[31:16], dummy);
+	endtask
+
+	task spi2_read_mix (bit[7:0] addr, output logic[31:0] data);
+		spi_phy_if_inst.xchg_u16(16'h9000, data);
+		spi_phy_if_inst.xchg_u16(addr, data);
+		spi_phy_if_inst.xchg_u16(0, data);
+		spi2_read_u16(8'h4, data[15:0]);
+		spi2_read_u16(8'h5, data[31:16]);
 	endtask
 
 	initial begin
 		sdram_if_host.test();
 	end
 
+	logic[31:0] data = '0;
 	initial begin
 		spi_phy_if_inst.cs <= '1;
 		#100;
-		spi2_write_mem_u16('0, 16'h1234);
-		spi2_write_mem_u16(10, 16'h7777);
-		spi2_read_mem_u16('0);
-		spi2_read_mem_u16(10);
+		spi2_read_u16(8'h0, data);
+		spi2_write_mem_u16('0, 16'habcd);
+		spi2_write_mem_u16(10, 16'hef01);
+		spi2_read_mem_u16('0, data);
+		spi2_read_mem_u16(10, data);
+		#50;
+		spi2_write_mix(8'h0, 32'h10);
+		spi2_write_mix(8'h1, 32'h4);
+		spi2_write_mix(8'h80, 32'h20);
+		spi2_write_mix(8'h81, 32'h8);
+		spi2_write_mix(8'h82, 32'h80);
+
+		spi2_read_mix(8'h0, data);
+		spi2_read_mix(8'h1, data);
+
+		spi2_write_mix(8'h40, 32'h1);
+
 	end
 
 endmodule
