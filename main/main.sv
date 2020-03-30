@@ -122,7 +122,6 @@ module project
     mem_wif_t mem_wif();
     mem_wif_t spi_mem_wif();
     mem_wif_t a_mem_wif();
-    mem_wif_t mem_user_2();
     mem_wif_t mem_user_3();
 
     assign mem_wif.clk_i = clk_50MHz;
@@ -208,7 +207,6 @@ module project
     wire[7:0] spi2_ctl = spi2_host_if.dat_i[15:8];
     assign spi_mem_wif.rst_i = reset;
     assign a_mix_wif.rst_i = reset;
-    assign mb_mem_wif.rst_i = reset;
     assign a_mix_wif.clk_i = mem_wif.clk_i;
 
     always_ff @(posedge clk_50MHz) begin
@@ -478,6 +476,8 @@ logic we_i_reg = '0;
 logic[31:0] addr_reg = '0;
 logic[15:0] data_reg = '0;
 logic[15:0] data_len = '0;
+
+assign mem.rst_i = rst_i;
 
 always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i) begin

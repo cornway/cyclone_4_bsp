@@ -255,11 +255,19 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
 		spi2_read_u16(8'h5, data[31:16]);
 	endtask
 
+	task spi2_memset (bit[31:0] addr, input logic[15:0] data, input logic[31:0] len);
+		spi2_mem_burst_begin(addr, len, '0);
+		while (len--) begin
+			spi2_mem_burst_write(data);
+		end
+	endtask
+
 	initial begin
 		sdram_if_host.test();
 	end
 
 	logic[31:0] data = '0;
+	logic state = '0;
 	initial begin
 		spi_phy_if_inst.cs <= '1;
 		#100;
@@ -270,11 +278,7 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
 		spi2_read_mem_u16(10, data);
 
 		#50;
-		spi2_mem_burst_begin(32'h20, 16'h4, '0);
-		spi2_mem_burst_write(16'hdead);
-		spi2_mem_burst_write(16'hbeef);
-		spi2_mem_burst_write(16'hbabe);
-		spi2_mem_burst_write(16'hbeef);
+		spi2_memset(32'h20, 16'hFF, 40);
 
 		#50;
 		spi2_mem_burst_begin(32'h20, 16'h4, '1);
@@ -284,16 +288,21 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
 		spi2_mem_burst_read(data[31:16]);
 		#50;
 		spi2_write_mix(8'h0, 32'h10);
-		spi2_write_mix(8'h1, 32'h4);
+		spi2_write_mix(8'h1, 32'h20);
 		spi2_write_mix(8'h80, 32'h20);
-		spi2_write_mix(8'h81, 32'h8);
+		spi2_write_mix(8'h81, 32'h40);
 		spi2_write_mix(8'h82, 32'h80);
 
 		spi2_read_mix(8'h0, data);
 		spi2_read_mix(8'h1, data);
 
 		spi2_write_mix(8'h40, 32'h1);
+		state = 1;
+	end
 
+	initial begin
+		@(state);
+		spi2_memset(32'h2b, 16'h99, 10);
 	end
 
 endmodule

@@ -36,5 +36,4 @@ add wave dut/sdram_wish_if_inst/*
 add wave dut/sdram_wish_if_inst/host/*
 
 run 200us
-run 30000ns
 
