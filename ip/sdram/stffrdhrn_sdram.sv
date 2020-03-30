@@ -158,6 +158,8 @@ reg [7:0] command_nxt;
 reg [3:0] state_cnt_nxt;
 reg [4:0] next;
 
+reg refresh_ind = '0;
+
 assign {clock_enable, cs_n, ras_n, cas_n, we_n} = command[7:3];
 // state[4] will be set if mode is read/write
 assign bank_addr      = (state[4]) ? bank_addr_r : command[2:1];
@@ -202,7 +204,7 @@ always @ (posedge clk)
     else
       rd_ready_r <= 1'b0;
 
-    busy <= state[4];
+    busy <= state[4] || refresh_ind;
 
     if (rd_enable)
       haddr_r <= rd_addr;
@@ -270,6 +272,17 @@ begin
      //                                       T  654L210
      addr_r = {{SDRADDR_WIDTH-10{1'b0}}, 10'b1000110000};
      end
+end
+
+always @(posedge clk) begin
+    case(state)
+      REF_PRE: begin
+          refresh_ind <= '1;
+      end
+      IDLE: begin
+          refresh_ind <= '0;
+      end
+    endcase
 end
 
 // Next state logic

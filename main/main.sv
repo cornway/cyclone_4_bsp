@@ -46,7 +46,8 @@ module project
 
     logic button_a;
 
-    wire reset = por_reset;
+    wire device_ready = simulation ? '1 : pll_locked && pll2_locked;
+    wire reset = por_reset | ~device_ready;
 
     assign clk_200MHz = simulation ? clk_sim_200MHz : clk_pll_200MHz;
     assign clk_4MHz = simulation ? clk_sim_4MHz : clk_pll_4MHz;
@@ -59,8 +60,6 @@ module project
             .clk_i  (clk_50MHz),
             .rst_o  (por_reset)
          );
-
-    assign device_ready = simulation ? '1 : pll_locked && pll2_locked;
 
     pll pll_200MHz
         (
@@ -125,6 +124,7 @@ module project
     mem_wif_t mem_user_3();
 
     assign mem_wif.clk_i = clk_50MHz;
+    assign sdram_phy.Clk = clk_100MHz;
 
     wishbus_4 wishbus_4_inst
         (
@@ -539,7 +539,7 @@ always_ff @(posedge clk_i, posedge rst_i) begin
             state_ack2: begin
                 if (!mem.cyc_o) begin
                     if (we_i_reg)
-                        data_reg <= mem.dat_i;
+                        dat_o <= mem.dat_i;
                     seq_o <= '1;
                     mem.dat_o <= '0;
                     mem.addr_i <= '0;

@@ -80,7 +80,8 @@ endinterface
 
 module sdram_phy_if (sdram_phy_if_t phy);
 
-	mt48lc8m16a2 mt48lc8m16a2_if
+	mt48lc8m16a2 #(.mem_sizes(128))
+	mt48lc8m16a2_if
 	(
 	.Dq(phy.Dq),
 	.Addr(phy.Addr),
@@ -262,12 +263,21 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
 		end
 	endtask
 
+	task spi2_memdump (bit[31:0] addr, input logic[31:0] len);
+		spi2_mem_burst_begin(addr, len, '1);
+		$display("dump: 0x%x 0x%x", addr, len);
+		while (len--) begin
+			spi2_mem_burst_read(data);
+			$display(" 0x%04x ", data);
+		end
+		$display("=====");
+	endtask
+
 	initial begin
 		sdram_if_host.test();
 	end
 
 	logic[31:0] data = '0;
-	logic state = '0;
 	initial begin
 		spi_phy_if_inst.cs <= '1;
 		#100;
@@ -278,7 +288,8 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
 		spi2_read_mem_u16(10, data);
 
 		#50;
-		spi2_memset(32'h20, 16'hFF, 40);
+		spi2_memset(32'h20, 16'h1234, 40);
+		spi2_memdump(32'h20, 8);
 
 		#50;
 		spi2_mem_burst_begin(32'h20, 16'h4, '1);
@@ -288,7 +299,7 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
 		spi2_mem_burst_read(data[31:16]);
 		#50;
 		spi2_write_mix(8'h0, 32'h10);
-		spi2_write_mix(8'h1, 32'h20);
+		spi2_write_mix(8'h1, 32'h8);
 		spi2_write_mix(8'h80, 32'h20);
 		spi2_write_mix(8'h81, 32'h40);
 		spi2_write_mix(8'h82, 32'h80);
@@ -297,12 +308,10 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
 		spi2_read_mix(8'h1, data);
 
 		spi2_write_mix(8'h40, 32'h1);
-		state = 1;
-	end
-
-	initial begin
-		@(state);
-		spi2_memset(32'h2b, 16'h99, 10);
+		#10us;
+		//spi2_memset(32'h30, 16'h9999, 10);
+		//spi2_memdump(32'h30, 20);
+		spi2_memdump(32'h10, 8);
 	end
 
 endmodule

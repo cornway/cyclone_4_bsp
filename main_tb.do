@@ -22,7 +22,7 @@ vlog -work work -suppress 8885 ../../common/utils/wishbus.sv
 vlog -work work ../../main/tb.sv
 vlog -work work ../../sim/sdram_sim.v
 
-vsim work.top
+vsim work.top -displaymsgmode both
 
 view objects
 view locals
