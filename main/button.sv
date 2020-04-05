@@ -22,7 +22,7 @@ module mod_button
     end
 
     always_comb begin
-        if (shiftreg == '1) begin
+        if (&shiftreg) begin
             pin_int = '1;
         end else begin
             pin_int = '0;

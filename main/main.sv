@@ -44,16 +44,32 @@ module project
     logic clk_100MHz = '0;
     logic clk_25MHz = '0;
 
+    logic clk_2MHz = '0;
+    logic clk_1MHz = '0;
+
     logic button_a;
+    logic button_b;
+    logic button_c;
+    logic button_d;
 
     wire device_ready = simulation ? '1 : pll_locked && pll2_locked;
     wire reset = por_reset | ~device_ready;
 
+    logic clk_1KHz = '0;
+    logic[9:0] clk_1KHz_cnt = '0;
+
+    logic clk_1Hz = '0;
+    logic[9:0] clk_1Hz_cnt = '0;
+
+    logic[15:0] dt_dbg;
     assign clk_200MHz = simulation ? clk_sim_200MHz : clk_pll_200MHz;
     assign clk_4MHz = simulation ? clk_sim_4MHz : clk_pll_4MHz;
 
     always_ff @(posedge clk_50MHz) clk_25MHz <= ~clk_25MHz;
     always_ff @(posedge clk_200MHz) clk_100MHz <= ~clk_100MHz;
+
+    always_ff @(posedge clk_4MHz) clk_2MHz <= ~clk_2MHz;
+    always_ff @(posedge clk_2MHz) clk_1MHz <= ~clk_1MHz;
 
     mod_por por
         (
@@ -76,36 +92,64 @@ module project
             .locked     (pll2_locked)
         );
 
-    logic buz_trig = '0;
-    logic buz_busy;
-    assign led_a_o = !buz_busy;
-
-    mod_buzzer
-    #(
-        .simulation(simulation)
-    ) buzzer (
-            .clk_4M_i       (clk_4MHz),
-            .period_ms_i    (simulation ? 10 : 600),
-            .trig_i         (buz_trig),
-            .rst_i          (por_reset),
-            .cyc_o          (buz_busy),
-            .pin_o          (buzz_o)
-        );
+    assign buzz_o = ~button_a;
 
     mod_button mod_button_a
         (
-            .clk_i          (clk_4MHz),
+            .clk_i          (clk_50MHz),
             .pin_i          (button_a_i),
-            .pin_o          (button_a)
+            .evt_o          (button_a)
+        );
+    mod_button mod_button_b
+        (
+            .clk_i          (clk_50MHz),
+            .pin_i          (button_b_i),
+            .evt_o          (button_b)
+        );
+    mod_button mod_button_c
+        (
+            .clk_i          (clk_50MHz),
+            .pin_i          (button_c_i),
+            .evt_o          (button_c)
+        );
+    mod_button mod_button_d
+        (
+            .clk_i          (clk_50MHz),
+            .pin_i          (button_d_i),
+            .evt_o          (button_d)
         );
 
-    always_ff @ (posedge clk_4MHz) begin
-        if (!buz_busy) begin
-            buz_trig <= button_a;
+    always_ff @(posedge clk_1MHz) begin
+        if (clk_1KHz_cnt == 10'd500) begin
+            clk_1KHz_cnt <= '0;
+            clk_1KHz <= ~clk_1KHz;
         end else begin
-            buz_trig <= '0;
+            clk_1KHz_cnt <= clk_1KHz_cnt + 1'b1;
         end
     end
+
+    always_ff @(posedge clk_1KHz) begin
+        if (clk_1Hz_cnt == 10'd500) begin
+            clk_1Hz_cnt <= '0;
+            clk_1Hz <= ~clk_1Hz;
+        end else begin
+            clk_1Hz_cnt <= clk_1Hz_cnt + 1'b1;
+        end
+    end
+
+    digital_tube_8x4_static digital_tube_8x4_static_inst
+        (
+            .clk_1KHz(clk_1KHz),
+            .rst_i(reset),
+            .dig_i(dt_dbg),
+            .seg_o(lcd_seg),
+            .dig_o(lcd_dig)
+        );
+
+    assign led_a_o = ~button_a_i;
+    assign led_b_o = ~button_b_i;
+    assign led_c_o = ~button_c_i;
+    assign led_d_o = ~button_d_i;
 
     logic mb_trig = '0;
     logic mb_cyc;
@@ -124,7 +168,7 @@ module project
     mem_wif_t mem_user_3();
 
     assign mem_wif.clk_i = clk_50MHz;
-    assign sdram_phy.Clk = clk_100MHz;
+    assign sdram_phy.Clk = clk_50MHz;
 
     wishbus_4 wishbus_4_inst
         (

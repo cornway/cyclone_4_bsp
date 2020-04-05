@@ -65,6 +65,7 @@ module mod_buzzer
                 state_done :
                 begin
                     cyc_o <= '0;
+                    pin_int <= '1;
                     beep_state_next <= state_idle;
                 end
             endcase
