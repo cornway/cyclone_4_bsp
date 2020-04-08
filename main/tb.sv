@@ -1,5 +1,5 @@
 
-`timescale 1ns/1ns
+`timescale 1ns / 100ps
 
 interface spi_phy_sim_if(input clock);
     bit sck;
@@ -129,7 +129,7 @@ logic button_a = '0;
 
 always begin
 	clk_200M <= ~clk_200M;
-	#5;
+	#2.5ns;
 end
 
 always begin
@@ -139,20 +139,20 @@ end
 
 always begin
 	clk_4M <= ~clk_4M;
-	#50;
+	#50ns;
 end
 
 always begin
 	sdram_if_host.clk <= ~sdram_if_host.clk;
-	#10;
+	#10ns;
 end
 
 initial begin
 	sdram_if_host.clk <= '0;
 	button_a <= '0;
-	#100;
+	#100ns;
 	button_a <= '1;
-	#500;
+	#500ns;
 	button_a <= '0;
 end
 
