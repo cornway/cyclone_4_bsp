@@ -275,14 +275,11 @@ begin
 end
 
 always @(posedge clk) begin
-    case(state)
-      REF_PRE: begin
-          refresh_ind <= '1;
-      end
-      IDLE: begin
-          refresh_ind <= '0;
-      end
-    endcase
+    if (refresh_cnt >= CYCLES_BETWEEN_REFRESH - 4) begin
+      refresh_ind <= '1;
+    end else if (next == IDLE) begin
+      refresh_ind <= '0;
+    end
 end
 
 // Next state logic
