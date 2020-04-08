@@ -18,6 +18,8 @@ vlog -work work -suppress 8885 ../../common/utils/primitives.sv
 vlog -work work -suppress 8885 ../../common/utils/sdram_wish.sv
 vlog -work work -suppress 8885 ../../common/utils/audio_mix.sv
 vlog -work work -suppress 8885 ../../common/utils/wishbus.sv
+vlog -work work -suppress 8885 ../../common/utils/sfx_cpu.sv
+vlog -work work -suppress 8885 ../../common/utils/dt_4x8.sv
 
 vlog -work work ../../main/tb.sv
 vlog -work work ../../sim/sdram_sim.v

@@ -97,6 +97,29 @@ module sdram_phy_if (sdram_phy_if_t phy);
 
 endmodule
 
+module ram_2port
+(
+	input logic[15:0] data,
+	input logic[9:0] rdaddress,
+	input logic rdclock,
+	input logic[9:0] wraddress,
+	input logic wrclock,
+	input logic wren,
+	output logic[15:0] q
+);
+
+logic[15:0] ram[2048];
+
+always_ff @(posedge rdclock) begin
+	q <= ram[rdaddress];
+end
+
+always_ff @(posedge wrclock) begin
+	ram[wraddress] <= data;
+end
+
+endmodule
+
 module top();
 
 logic clk_4M = '0;
@@ -273,36 +296,87 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
 		$display("=====");
 	endtask
 
-	initial begin
-		sdram_if_host.test();
-	end
+	task spi2_wr_fxcpu_instr (bit[31:0] addr, bit[7:0] opcode, bit[2:0] dst, bit[2:0] src);
+		automatic logic[15:0] dummy;
+		spi2_write_mem_u16(addr, {2'h0, src, dst, opcode});
+	endtask
+
+localparam
+    OP_NOP = 8'h0,
+    OP_LDMI = 8'h80,
+    OP_STMI = 8'h81,
+    OP_MOV = 8'h10,
+    OP_ADDS = 8'h40,
+    OP_MUL = 8'h41,
+    OP_ADDI = 8'h42,
+    OP_JNZ = 8'h20,
+    OP_HALT = 8'hff;
+
+	task spi2_wr_fxcpu_run ();
+		automatic logic[15:0] dummy = 16'h1;
+		spi_phy_if_inst.xchg_u16(16'h1001, dummy);
+	endtask
+
+	task spi2_wr_fxcpu_jnz (bit[31:0] addr, bit[7:0] jaddr);
+		automatic logic[15:0] dummy;
+		spi2_write_mem_u16(addr, {jaddr, OP_JNZ});
+	endtask
+
+	task spi2_wr_fxcpu_addi (bit[31:0] addr, bit[2:0] dst, bit[4:0] imm);
+		automatic logic[15:0] dummy;
+		spi2_write_mem_u16(addr, {imm, dst, OP_ADDI});
+	endtask
+
+	task fcpu_test ();
+		automatic logic[31:0] _addr = '0;
+		spi2_wr_fxcpu_instr(_addr, OP_NOP, '0, '0);        _addr += 2;
+		spi2_wr_fxcpu_instr(_addr, OP_MOV, 3'd0, '0);      _addr += 2;
+		spi2_write_mem_u16(_addr, 16'hdead);               _addr += 2;
+		spi2_wr_fxcpu_addi(_addr, 3'd0, 5'd1);             _addr += 2;
+		spi2_wr_fxcpu_instr(_addr, OP_MOV, 3'd1, '0);      _addr += 2;
+		spi2_write_mem_u16(_addr, 16'hbeef);               _addr += 2;
+		spi2_wr_fxcpu_jnz(_addr, -8'd6);                   _addr += 2;
+		spi2_wr_fxcpu_instr(_addr, OP_HALT, '0, '0);       _addr += 2;
+		spi2_wr_fxcpu_run();
+	endtask
+
+	//initial begin
+	//	sdram_if_host.test();
+	//end
 
 	logic[31:0] data = '0;
 	initial begin
 		spi_phy_if_inst.cs <= '1;
-		#100;
+		#12us;
+	/*
 		spi2_read_u16(8'h0, data);
 		spi2_write_mem_u16('0, 16'habcd);
 		spi2_write_mem_u16(10, 16'hef01);
 		spi2_read_mem_u16('0, data);
 		spi2_read_mem_u16(10, data);
 
-		#50;
-		spi2_memset(32'h20, 16'h1234, 40);
+		#50ns;
+		spi2_memset(32'h20, -16'd30, 20);
 		spi2_memdump(32'h20, 8);
-
-		#50;
+		spi2_memset(32'h40, 16'd100, 20);
+*/
+		#50us;
+		fcpu_test();
+		/*
 		spi2_mem_burst_begin(32'h20, 16'h4, '1);
 		spi2_mem_burst_read(data[15:0]);
 		spi2_mem_burst_read(data[31:16]);
 		spi2_mem_burst_read(data[15:0]);
 		spi2_mem_burst_read(data[31:16]);
-		#50;
+		#50ns;
 		spi2_write_mix(8'h0, 32'h10);
 		spi2_write_mix(8'h1, 32'h8);
 		spi2_write_mix(8'h80, 32'h20);
-		spi2_write_mix(8'h81, 32'h40);
+		spi2_write_mix(8'h81, 32'h20);
 		spi2_write_mix(8'h82, 32'h80);
+		spi2_write_mix(8'h90, 32'h40);
+		spi2_write_mix(8'h91, 32'h20);
+		spi2_write_mix(8'h92, 32'h70);
 
 		spi2_read_mix(8'h0, data);
 		spi2_read_mix(8'h1, data);
@@ -312,6 +386,7 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
 		//spi2_memset(32'h30, 16'h9999, 10);
 		//spi2_memdump(32'h30, 20);
 		spi2_memdump(32'h10, 8);
+		*/
 	end
 
 endmodule

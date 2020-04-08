@@ -165,10 +165,15 @@ module project
     mem_wif_t mem_wif();
     mem_wif_t spi_mem_wif();
     mem_wif_t a_mem_wif();
-    mem_wif_t mem_user_3();
+    mem_wif_t mem_fcpu();
+    mem_wif_t mem_fcpu_reg();
+    mem_wif_t mem_fcpu_ram();
+    //mem_wif_t mem_dummy();
 
     assign mem_wif.clk_i = clk_50MHz;
     assign sdram_phy.Clk = clk_50MHz;
+    assign mem_fcpu.clk_i = clk_50MHz;
+    assign mem_fcpu_reg.clk_i = clk_50MHz;
 
     wishbus_4 wishbus_4_inst
         (
@@ -176,15 +181,66 @@ module project
             .user_0(a_mem_wif),
             .user_1(spi_mem_wif),
             .user_2(mb_mem_wif),
-            .user_3(mem_user_3),
+            .user_3(mem_fcpu_ram),
 
-            .user_en(4'b0111)
+            .user_en(4'b1111)
+        );
+
+    wishbus_1to2 wishbus_1to2_inst
+        (
+            .mem_1(mem_fcpu_ram),
+            .mem_2(mem_fcpu_reg),
+            .user(mem_fcpu),
+            .mem_en(mem_fcpu.addr_i[31])
+        );
+
+    assign mem_fcpu.ack_o = mem_fcpu_ram.ack_o;
+    assign mem_fcpu_reg.ack_o = '1;
+
+    logic fxcpu16_reset = '0;
+    fxcpu16 fxcpu16_inst
+        (
+            .mem(mem_fcpu),
+            .rst_i(reset | fxcpu16_reset)
+        );
+
+    mem_wif_t ram_wif();
+    mem_wif_t sdram_wif();
+
+    assign sdram_wif.clk_i = clk_50MHz;
+    assign ram_wif.clk_i = clk_50MHz;
+
+    wishbus_1to2 wishbus_1to2_inst_2
+        (
+            .mem_1(sdram_wif),
+            .mem_2(ram_wif),
+            .user(mem_wif),
+            .mem_en(mem_wif.addr_i[30])
         );
 
     sdram_wish_if sdram_wish_if_inst
         (
-            .wif(mem_wif),
+            .wif(sdram_wif),
             .phy(sdram_phy)
+        );
+
+    ram_phy_t ram_phy();
+
+    ram_2_wishbus ram_2_wishbus_inst
+        (
+            .phy(ram_phy),
+            .mem(ram_wif)
+        );
+
+    ram_2port ram_2port_inst
+        (
+            .data(ram_phy.data),
+            .rdaddress(ram_phy.rdaddress),
+            .rdclock(ram_phy.rdclock),
+            .wraddress(ram_phy.wraddress),
+            .wrclock(ram_phy.wrclock),
+            .wren(ram_phy.wren),
+            .q(ram_phy.q)
         );
 
     spi_phy_if spi2_phy_if();
@@ -270,6 +326,8 @@ module project
 
             mb_stb <= '0;
 
+            fxcpu16_reset <= '1;
+
         end else if (spi2_host_if.wr_req_ack) begin
             case (spi2_state)
                 state_idle:
@@ -299,6 +357,9 @@ module project
                         8'hD1: begin
                             mb_we_i <= '0;
                             spi2_state <= state_mem_burst_init;
+                        end
+                        8'h10: begin
+                            fxcpu16_reset <= ~spi2_host_if.dat_i[0];
                         end
                         default: begin
                         end
@@ -485,131 +546,5 @@ module project
 
             .mem(mb_mem_wif)
         );
-
-endmodule
-
-module mem_burst_if
-(
-    input logic clk_i,
-    input logic stb_i,
-    input logic seq_i,
-    input logic rst_i,
-    input logic we_i,
-    output logic cyc_o,
-    output logic seq_o,
-    input logic[15:0] len_i,
-    input logic[15:0] dat_i,
-    output logic[15:0] dat_o,
-    input logic[31:0] addr_i,
-
-    mem_wif_t.dev mem
-);
-
-enum logic[2:0] {
-    state_idle,
-    state_init,
-    state_seq,
-    state_req,
-    state_ack,
-    state_ack2,
-    state_ack3,
-    state_done
-} mb_state = state_idle;
-
-logic we_i_reg = '0;
-logic[31:0] addr_reg = '0;
-logic[15:0] data_reg = '0;
-logic[15:0] data_len = '0;
-
-assign mem.rst_i = rst_i;
-
-always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) begin
-        mb_state <= state_idle;
-        dat_o <= '0;
-        data_reg <= '0;
-        data_len <= '0;
-        we_i_reg <= '0;
-        addr_reg <= '0;
-        seq_o <= '0;
-        cyc_o <= '0;
-
-        mem.stb_i <= '0;
-        mem.we_i <= '1;
-        mem.sel_i <= '1;
-        mem.dat_o <= '0;
-        mem.addr_i <= '0;
-
-    end else begin
-        case (mb_state)
-            state_idle: begin
-                if (stb_i) begin
-                    data_len <= len_i;
-                    addr_reg <= addr_i;
-                    we_i_reg <= we_i;
-                    cyc_o <= '1;
-                    mb_state <= state_seq;
-                end
-            end
-            state_seq: begin
-                if (seq_i) begin
-                    data_reg <= dat_i;
-                    data_len <= data_len - 1'b1;
-                    addr_reg <= addr_reg + 1'b1;
-                    mb_state <= state_req;
-                end
-            end
-            state_req: begin
-                if (!mem.cyc_o) begin
-                    if (mem.ack_o) begin
-                        mem.sel_i <= '1;
-                        mem.stb_i <= '1;
-                        mem.we_i <= we_i_reg;
-                        mem.addr_i <= addr_reg;
-                        if (!we_i_reg) 
-                            mem.dat_o <= data_reg;
-                        mb_state <= state_ack;
-                    end else begin
-                        mem.sel_i <= '0;
-                    end
-                end
-            end
-            state_ack: begin
-                if (mem.stb_o) begin
-                    mem.stb_i <= '0;
-                    mb_state <= state_ack2;
-                end
-            end
-            state_ack2: begin
-                if (!mem.cyc_o) begin
-                    if (we_i_reg)
-                        dat_o <= mem.dat_i;
-                    seq_o <= '1;
-                    mem.dat_o <= '0;
-                    mem.addr_i <= '0;
-                    mem.we_i <= '1;
-                    if (data_len)
-                        mb_state <= state_ack3;
-                    else begin
-                        mb_state <= state_done;
-                    end
-                end
-            end
-            state_ack3: begin
-                if (!seq_i) begin
-                    seq_o <= '0;
-                    mb_state <= state_seq;
-                end
-            end
-            state_done: begin
-                if (!seq_i) begin
-                    cyc_o <= '0;
-                    seq_o <= '0;
-                    mb_state <= state_idle;
-                end
-            end
-        endcase
-    end
-end
 
 endmodule

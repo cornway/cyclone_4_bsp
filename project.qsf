@@ -132,6 +132,7 @@ set_location_assignment PIN_135 -to lcd_dig[1]
 set_location_assignment PIN_136 -to lcd_dig[2]
 set_location_assignment PIN_137 -to lcd_dig[3]
 
+set_global_assignment -name QIP_FILE ip/ram/ram_2port.qip
 set_global_assignment -name QIP_FILE ip/pll2/pll2.qip
 set_global_assignment -name QIP_FILE ip/pll/pll.qip
 set_global_assignment -name SYSTEMVERILOG_FILE common/utils/primitives.sv
