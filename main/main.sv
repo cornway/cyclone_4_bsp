@@ -186,12 +186,13 @@ module project
             .user_en(4'b1111)
         );
 
+    logic[1:0] fxcpu_addr_space;
     wishbus_1to2 wishbus_1to2_inst
         (
             .mem_1(mem_fcpu_ram),
             .mem_2(mem_fcpu_reg),
             .user(mem_fcpu),
-            .mem_en(mem_fcpu.addr_i[31])
+            .mem_en(fxcpu_addr_space[1])
         );
 
     assign mem_fcpu.ack_o = mem_fcpu_ram.ack_o;
@@ -201,7 +202,9 @@ module project
     fxcpu16 fxcpu16_inst
         (
             .mem(mem_fcpu),
-            .rst_i(reset | fxcpu16_reset)
+            .rst_i(reset | button_d),
+            .addr_space(fxcpu_addr_space),
+            .dbg_reg(dt_dbg),
         );
 
     mem_wif_t ram_wif();
@@ -215,7 +218,7 @@ module project
             .mem_1(sdram_wif),
             .mem_2(ram_wif),
             .user(mem_wif),
-            .mem_en(mem_wif.addr_i[30])
+            .mem_en(fxcpu_addr_space[0] | mem_wif.addr_i[30])
         );
 
     sdram_wish_if sdram_wish_if_inst
