@@ -296,21 +296,12 @@ spi_phy_sim_if spi_phy_if_inst(clk_50M);
 		$display("=====");
 	endtask
 
-	task spi2_wr_fxcpu_instr (bit[31:0] addr, bit[7:0] opcode, bit[2:0] dst, bit[2:0] src);
+	task spi2_wr_fxcpu_instr (bit[31:0] addr, bit[7:0] opcode, 	 bit[2:0] dst, bit[2:0] src);
 		automatic logic[15:0] dummy;
 		spi2_write_mem_u16(addr, {2'h0, src, dst, opcode});
 	endtask
 
-localparam
-    OP_NOP = 8'h0,
-    OP_LDMI = 8'h80,
-    OP_STMI = 8'h81,
-    OP_MOV = 8'h10,
-    OP_ADDS = 8'h40,
-    OP_MUL = 8'h41,
-    OP_ADDI = 8'h42,
-    OP_JNZ = 8'h20,
-    OP_HALT = 8'hff;
+	`include "../common/utils/sfxcpu_reg.sv"
 
 	task spi2_wr_fxcpu_run ();
 		automatic logic[15:0] dummy = 16'h1;
@@ -322,13 +313,20 @@ localparam
 		spi2_write_mem_u16(addr, {jaddr, OP_JNZ});
 	endtask
 
+	task spi2_wr_fxcpu_ji (bit[31:0] addr, bit[31:0] jaddr);
+		automatic logic[15:0] dummy;
+		spi2_write_mem_u16(addr, {8'h0, OP_JI});
+		spi2_write_mem_u16(addr + 2, jaddr[15:0]);
+		spi2_write_mem_u16(addr + 4, jaddr[31:16]);
+	endtask
+
 	task spi2_wr_fxcpu_addi (bit[31:0] addr, bit[2:0] dst, bit[4:0] imm);
 		automatic logic[15:0] dummy;
 		spi2_write_mem_u16(addr, {imm, dst, OP_ADDI});
 	endtask
 
 	task fcpu_test ();
-		automatic logic[31:0] _addr = '0;
+		automatic logic[31:0] _addr = 32'h40000000;
 		spi2_wr_fxcpu_instr(_addr, OP_NOP, '0, '0);        _addr += 2;
 		spi2_wr_fxcpu_instr(_addr, OP_MOV, 3'd0, '0);      _addr += 2;
 		spi2_write_mem_u16(_addr, 16'hdead);               _addr += 2;
@@ -337,6 +335,7 @@ localparam
 		spi2_write_mem_u16(_addr, 16'hbeef);               _addr += 2;
 		spi2_wr_fxcpu_jnz(_addr, -8'd6);                   _addr += 2;
 		spi2_wr_fxcpu_instr(_addr, OP_HALT, '0, '0);       _addr += 2;
+		spi2_wr_fxcpu_ji('0, 32'h40000000);
 		spi2_wr_fxcpu_run();
 	endtask
 
