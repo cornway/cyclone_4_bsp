@@ -151,7 +151,6 @@ module project
     assign led_c_o = ~button_c_i;
     assign led_d_o = ~button_d_i;
 
-    logic mb_trig = '0;
     logic mb_cyc;
     logic mb_stb;
     logic mb_we_i = '0;
@@ -191,10 +190,10 @@ module project
             .mem_1(mem_fcpu_ram),
             .mem_2(mem_fcpu_reg),
             .user(mem_fcpu),
-            .mem_en('0)//fxcpu_addr_space[1]
+            .mem_en(fxcpu_addr_space[1])
         );
 
-    assign mem_fcpu_ram.rst_i = reset;//mem_fcpu.rst_i;
+    //assign mem_fcpu_ram.rst_i = reset;//mem_fcpu.rst_i;
     assign mem_fcpu.ack_o = mem_fcpu_ram.ack_o;
     //assign mem_fcpu_reg.ack_o = '1;
 
@@ -204,7 +203,6 @@ module project
             .mem(mem_fcpu),
             .rst_i(reset | fxcpu16_reset),
             .addr_space(fxcpu_addr_space),
-            .dbg_reg(dt_dbg)
         );
 
     mem_wif_t ram_wif();
@@ -259,16 +257,6 @@ module project
     assign spi2_host_if.clk_i = clk_50MHz;
     assign spi2_host_if.reset = reset;
 
-    spi_16bit_slave spi_16bit_slave_2
-        (
-            .phy(spi2_phy_if),
-            .spi_host(spi2_host_if),
-
-            .conf_cpol('0),
-            .conf_dir('0),
-            .conf_cpha('0)
-        );
-
     a_mix_wif_t a_mix_wif();
 
     audio_mixer_8_16bps audio_mixer_8_16bps_inst
@@ -282,7 +270,7 @@ module project
 
     assign spi_mem_wif.rst_i = reset;
     assign a_mix_wif.rst_i = reset;
-    assign mem_spi2_wif.rst_i = reset;
+    //assign mem_spi2_wif.rst_i = reset;
     assign a_mix_wif.clk_i = mem_wif.clk_i;
 
     mem_wif_t mem_internal();
@@ -311,34 +299,32 @@ module project
         );
 
     enum logic[4 : 0]
-        {state_idle,
-        state_mem_burst_init,
-        state_mem_burst_start,
-        state_mem_burst_next,
-        state_mem_burst_start_ack,
-        state_mem_burst_next_ack,
-        state_mem_addr_lo,
-        state_mem_addr_hi,
-        state_mem_dat_lo,
-        state_mem_read,
-        state_mem_read_ack,
-        state_mem_read_ack2,
-        state_mem_write,
-        state_mem_write_ack,
-        state_mix_wr_master_addr,
-        state_mix_wr_master_len,
-        state_mix_wr_addr,
-        state_mix_wr_dat_lo,
-        state_mix_wr_dat_hi,
-        state_mix_wait_ack,
-        state_mix_rd_addr,
-        state_mix_rd_ack
-        } spi2_state = state_idle,
-          spi2_state_next = state_idle;
+        {state_int_idle,
+        state_int_mburst_init,
+        state_int_mburst_start,
+        state_int_mburst_next,
+        state_int_mburst_start_ack,
+        state_int_mburst_next_ack,
+        state_int_addr_lo,
+        state_int_addr_hi,
+        state_int_dat_lo,
+        state_int_mem_read,
+        state_int_mem_read_ack,
+        state_int_mem_read_ack2,
+        state_int_mem_write,
+        state_int_mem_write_ack,
+        state_int_mix_wr_addr,
+        state_int_mix_wr_dat_lo,
+        state_int_mix_wr_dat_hi,
+        state_int_mix_wait_ack,
+        state_int_mix_rd_addr,
+        state_int_mix_rd_ack
+        } int_state = state_int_idle,
+          int_state_next = state_int_idle;
 
     always_ff @(posedge clk_50MHz) begin
         if (reset) begin
-            spi2_state <= state_idle;
+            int_state <= state_int_idle;
 
             spi_mem_wif.dat_o <= '0;
             spi_mem_wif.addr_i <= '0;
@@ -362,80 +348,83 @@ module project
         end else if (!mem_internal.stb_o && mem_internal.stb_i && !mem_internal.we_i) begin
             mem_internal.stb_o <= '1;
             mem_internal.cyc_o <= '1;
-            case (spi2_state)
-                state_idle:
+            case (int_state)
+                state_int_idle:
                     case (mem_internal.dat_o[15:8])
                         8'hC0: begin
-                            spi2_state <= state_mem_addr_lo;
-                            spi2_state_next <= state_mem_read;
+                            int_state <= state_int_addr_lo;
+                            int_state_next <= state_int_mem_read;
                         end
                         8'hC1: begin
-                            spi2_state <= state_mem_addr_lo;
-                            spi2_state_next <= state_mem_dat_lo;
+                            int_state <= state_int_addr_lo;
+                            int_state_next <= state_int_dat_lo;
                         end
                         8'h90: begin
-                            spi2_state <= state_mix_rd_addr;
+                            int_state <= state_int_mix_rd_addr;
                         end
                         8'h91: begin
-                            spi2_state <= state_mix_wr_addr;
+                            int_state <= state_int_mix_wr_addr;
                         end
                         8'hD0: begin
                             mb_we_i <= '1;
-                            spi2_state <= state_mem_burst_init;
+                            int_state <= state_int_mburst_init;
                         end
                         8'hD1: begin
                             mb_we_i <= '0;
-                            spi2_state <= state_mem_burst_init;
+                            int_state <= state_int_mburst_init;
                         end
                         8'h10: begin
                             fxcpu16_reset <= ~mem_internal.dat_o[0];
                         end
+                        8'h20: begin
+                            dt_dbg <= mem_internal.dat_o;
+                        end
                         default: begin
                         end
                     endcase
-                state_mem_burst_init: begin
+                state_int_mburst_init: begin
                     mb_length <= mem_internal.dat_o;
-                    spi2_state_next <= state_mem_burst_start;
-                    spi2_state <= state_mem_addr_lo;
+                    int_state_next <= state_int_mburst_start;
+                    int_state <= state_int_addr_lo;
                 end
-                state_mem_burst_next: begin
+                state_int_mburst_next: begin
                     if (!mb_cyc) begin
-                        spi2_state <= state_idle;
+                        int_state <= state_int_idle;
                     end else begin 
                         mb_seq <= '1;
                         mb_data <= mem_internal.dat_o;
-                        spi2_state <= state_mem_burst_next_ack;
+                        int_state <= state_int_mburst_next_ack;
                     end
                 end
-                state_mix_rd_addr: begin
+                state_int_mix_rd_addr: begin
                     a_mix_wif.addr_i <= mem_internal.dat_o[7:0];
                     a_mix_wif.stb_i <= '1;
-                    spi2_state <= state_mix_rd_ack;
+                    int_state <= state_int_mix_rd_ack;
                 end
-                state_mix_wr_addr: begin
+                state_int_mix_wr_addr: begin
                     a_mix_wif.addr_i <= mem_internal.dat_o[7:0];
-                    spi2_state <= state_mix_wr_dat_lo;
+                    int_state <= state_int_mix_wr_dat_lo;
                 end
-                state_mix_wr_dat_lo: begin
+                state_int_mix_wr_dat_lo: begin
                     a_mix_wif.dat_i[15:0] <= mem_internal.dat_o;
-                    spi2_state <= state_mix_wr_dat_hi;
+                    int_state <= state_int_mix_wr_dat_hi;
                 end
-                state_mix_wr_dat_hi: begin
+                state_int_mix_wr_dat_hi: begin
                     a_mix_wif.dat_i[31:16] <= mem_internal.dat_o;
                     a_mix_wif.stb_i <= '1;
                     a_mix_wif.we_i <= '0;
-                    spi2_state <= state_mix_wait_ack;
+                    int_state <= state_int_mix_wait_ack;
                 end
-                state_mem_addr_lo: begin
+                state_int_addr_lo: begin
                     mem_addr[15:0] <= mem_internal.dat_o;
-                    spi2_state <= state_mem_addr_hi;
+                    int_state <= state_int_addr_hi;
                 end
-                state_mem_addr_hi: begin
+                state_int_addr_hi: begin
                     mem_addr[31:16] <= mem_internal.dat_o;
-                    spi2_state <= spi2_state_next;
+                    int_state <= int_state_next;
                 end
-                state_mem_dat_lo: begin
-                    spi2_state <= state_mem_write;
+                state_int_dat_lo: begin
+                    int_state <= state_int_mem_write;
                     mem_dat[15:0] <= mem_internal.dat_o;
                 end
             endcase
@@ -463,47 +452,47 @@ module project
         end else begin
             mem_internal.cyc_o <= '0;
             mem_internal.stb_o <= '0;
-            case (spi2_state)
-                state_mem_burst_start: begin
+            case (int_state)
+                state_int_mburst_start: begin
                     if (!mb_cyc) begin
                         mb_addr <= mem_addr;
                         mb_stb <= '1;
-                        spi2_state <= state_mem_burst_start_ack;
+                        int_state <= state_int_mburst_start_ack;
                     end
                 end
-                state_mem_burst_next: begin
+                state_int_mburst_next: begin
                     if (!mb_cyc) begin
-                        spi2_state <= state_idle;
+                        int_state <= state_int_idle;
                     end
                 end
-                state_mem_burst_start_ack: begin
+                state_int_mburst_start_ack: begin
                     if (mb_cyc) begin
                         mb_stb <= '0;
-                        spi2_state <= state_mem_burst_next;
+                        int_state <= state_int_mburst_next;
                     end
                 end
-                state_mem_burst_next_ack: begin
+                state_int_mburst_next_ack: begin
                     if (mb_seq_ack) begin
                         mb_seq <= '0;
                         mem_dat[15:0] <= mb_data_o;
-                        spi2_state <= state_mem_burst_next;
+                        int_state <= state_int_mburst_next;
                     end
                 end
-                state_mix_rd_ack: begin
+                state_int_mix_rd_ack: begin
                     a_mix_wif.stb_i <= '0;
                     if (a_mix_wif.stb_o) begin
                         mem_dat <= a_mix_wif.dat_o;
-                        spi2_state <= state_idle;
+                        int_state <= state_int_idle;
                     end
                 end
-                state_mix_wait_ack: begin
+                state_int_mix_wait_ack: begin
                     a_mix_wif.stb_i <= '0;
                     if (a_mix_wif.stb_o) begin
                         a_mix_wif.we_i <= '1;
-                        spi2_state <= state_idle;
+                        int_state <= state_int_idle;
                     end
                 end
-                state_mem_write: begin
+                state_int_mem_write: begin
                     if (!spi_mem_wif.cyc_o) begin
                         if (spi_mem_wif.ack_o) begin
                             spi_mem_wif.sel_i <= '1;
@@ -511,42 +500,42 @@ module project
                             spi_mem_wif.dat_o <= mem_dat[15:0];
                             spi_mem_wif.stb_i <= '1;
                             spi_mem_wif.we_i <= '0;
-                            spi2_state <= state_mem_write_ack;
+                            int_state <= state_int_mem_write_ack;
                         end else begin
                             spi_mem_wif.sel_i <= '0;
                         end
                     end
                 end
-                state_mem_write_ack: begin
+                state_int_mem_write_ack: begin
                     if (spi_mem_wif.stb_o) begin
                         spi_mem_wif.we_i <= '1;
                         spi_mem_wif.addr_i <= '0;
                         spi_mem_wif.dat_o <= '0;
-                        spi2_state <= state_idle;
+                        int_state <= state_int_idle;
                     end
                 end
-                state_mem_read: begin
+                state_int_mem_read: begin
                     if (!spi_mem_wif.cyc_o) begin
                         if (spi_mem_wif.ack_o) begin
                             spi_mem_wif.sel_i <= '1;
                             spi_mem_wif.addr_i <= mem_addr;
                             spi_mem_wif.stb_i <= '1;
-                            spi2_state <= state_mem_read_ack;
+                            int_state <= state_int_mem_read_ack;
                         end else begin
                             spi_mem_wif.sel_i <= '0;
                         end
                     end
                 end
-                state_mem_read_ack: begin
+                state_int_mem_read_ack: begin
                     if (spi_mem_wif.stb_o) begin
-                        spi2_state <= state_mem_read_ack2;
+                        int_state <= state_int_mem_read_ack2;
                     end
                 end
-                state_mem_read_ack2: begin
+                state_int_mem_read_ack2: begin
                     if (!spi_mem_wif.cyc_o) begin
                         mem_dat[15:0] <= spi_mem_wif.dat_i;
                         spi_mem_wif.addr_i <= '0;
-                        spi2_state <= state_idle;
+                        int_state <= state_int_idle;
                     end
                 end
             endcase
@@ -570,6 +559,16 @@ module project
             .addr_i(mb_addr),
 
             .mem(mb_mem_wif)
+        );
+
+    spi_16bit_slave spi_16bit_slave_2
+        (
+            .phy(spi2_phy_if),
+            .spi_host(spi2_host_if),
+
+            .conf_cpol('0),
+            .conf_dir('0),
+            .conf_cpha('0)
         );
 
 endmodule
