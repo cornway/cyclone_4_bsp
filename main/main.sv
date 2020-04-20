@@ -162,12 +162,11 @@ module project
 
     mem_wif_t mb_mem_wif();
     mem_wif_t mem_wif();
-    mem_wif_t spi_mem_wif();
+    mem_wif_t int_mem_wif();
     mem_wif_t a_mem_wif();
     mem_wif_t mem_fcpu();
     mem_wif_t mem_fcpu_reg();
     mem_wif_t mem_fcpu_ram();
-    //mem_wif_t mem_dummy();
 
     assign mem_wif.clk_i = clk_50MHz;
     assign sdram_phy.Clk = clk_50MHz;
@@ -177,7 +176,7 @@ module project
         (
             .mem(mem_wif),
             .user_0(a_mem_wif),
-            .user_1(spi_mem_wif),
+            .user_1(int_mem_wif),
             .user_2(mb_mem_wif),
             .user_3(mem_fcpu_ram),
 
@@ -193,7 +192,7 @@ module project
             .mem_en(fxcpu_addr_space[1])
         );
 
-    //assign mem_fcpu_ram.rst_i = reset;//mem_fcpu.rst_i;
+    assign mem_fcpu_ram.rst_i = reset;//mem_fcpu.rst_i;
     assign mem_fcpu.ack_o = mem_fcpu_ram.ack_o;
     //assign mem_fcpu_reg.ack_o = '1;
 
@@ -202,7 +201,7 @@ module project
         (
             .mem(mem_fcpu),
             .rst_i(reset | fxcpu16_reset),
-            .addr_space(fxcpu_addr_space),
+            .addr_space(fxcpu_addr_space)
         );
 
     mem_wif_t ram_wif();
@@ -268,9 +267,9 @@ module project
     logic[31:0] mem_addr = '0;
     logic[31:0] mem_dat = '0;
 
-    assign spi_mem_wif.rst_i = reset;
+    assign int_mem_wif.rst_i = reset;
     assign a_mix_wif.rst_i = reset;
-    //assign mem_spi2_wif.rst_i = reset;
+    assign mem_spi2_wif.rst_i = reset;
     assign a_mix_wif.clk_i = mem_wif.clk_i;
 
     mem_wif_t mem_internal();
@@ -326,11 +325,11 @@ module project
         if (reset) begin
             int_state <= state_int_idle;
 
-            spi_mem_wif.dat_o <= '0;
-            spi_mem_wif.addr_i <= '0;
-            spi_mem_wif.stb_i <= '0;
-            spi_mem_wif.we_i <= '1;
-            spi_mem_wif.sel_i <= '1;
+            int_mem_wif.dat_o <= '0;
+            int_mem_wif.addr_i <= '0;
+            int_mem_wif.stb_i <= '0;
+            int_mem_wif.we_i <= '1;
+            int_mem_wif.sel_i <= '1;
 
             a_mix_wif.dat_i <= '0;
             a_mix_wif.addr_i <= '0;
@@ -493,55 +492,55 @@ module project
                     end
                 end
                 state_int_mem_write: begin
-                    if (!spi_mem_wif.cyc_o) begin
-                        if (spi_mem_wif.ack_o) begin
-                            spi_mem_wif.sel_i <= '1;
-                            spi_mem_wif.addr_i <= mem_addr;
-                            spi_mem_wif.dat_o <= mem_dat[15:0];
-                            spi_mem_wif.stb_i <= '1;
-                            spi_mem_wif.we_i <= '0;
+                    if (!int_mem_wif.cyc_o) begin
+                        if (int_mem_wif.ack_o) begin
+                            int_mem_wif.sel_i <= '1;
+                            int_mem_wif.addr_i <= mem_addr;
+                            int_mem_wif.dat_o <= mem_dat[15:0];
+                            int_mem_wif.stb_i <= '1;
+                            int_mem_wif.we_i <= '0;
                             int_state <= state_int_mem_write_ack;
                         end else begin
-                            spi_mem_wif.sel_i <= '0;
+                            int_mem_wif.sel_i <= '0;
                         end
                     end
                 end
                 state_int_mem_write_ack: begin
-                    if (spi_mem_wif.stb_o) begin
-                        spi_mem_wif.we_i <= '1;
-                        spi_mem_wif.addr_i <= '0;
-                        spi_mem_wif.dat_o <= '0;
+                    if (int_mem_wif.stb_o) begin
+                        int_mem_wif.we_i <= '1;
+                        int_mem_wif.addr_i <= '0;
+                        int_mem_wif.dat_o <= '0;
                         int_state <= state_int_idle;
                     end
                 end
                 state_int_mem_read: begin
-                    if (!spi_mem_wif.cyc_o) begin
-                        if (spi_mem_wif.ack_o) begin
-                            spi_mem_wif.sel_i <= '1;
-                            spi_mem_wif.addr_i <= mem_addr;
-                            spi_mem_wif.stb_i <= '1;
+                    if (!int_mem_wif.cyc_o) begin
+                        if (int_mem_wif.ack_o) begin
+                            int_mem_wif.sel_i <= '1;
+                            int_mem_wif.addr_i <= mem_addr;
+                            int_mem_wif.stb_i <= '1;
                             int_state <= state_int_mem_read_ack;
                         end else begin
-                            spi_mem_wif.sel_i <= '0;
+                            int_mem_wif.sel_i <= '0;
                         end
                     end
                 end
                 state_int_mem_read_ack: begin
-                    if (spi_mem_wif.stb_o) begin
+                    if (int_mem_wif.stb_o) begin
                         int_state <= state_int_mem_read_ack2;
                     end
                 end
                 state_int_mem_read_ack2: begin
-                    if (!spi_mem_wif.cyc_o) begin
-                        mem_dat[15:0] <= spi_mem_wif.dat_i;
-                        spi_mem_wif.addr_i <= '0;
+                    if (!int_mem_wif.cyc_o) begin
+                        mem_dat[15:0] <= int_mem_wif.dat_i;
+                        int_mem_wif.addr_i <= '0;
                         int_state <= state_int_idle;
                     end
                 end
             endcase
         end
-        if (spi_mem_wif.stb_i)
-            spi_mem_wif.stb_i <= '0;
+        if (int_mem_wif.stb_i)
+            int_mem_wif.stb_i <= '0;
     end
 
     mem_burst_if mem_burst_if_inst
