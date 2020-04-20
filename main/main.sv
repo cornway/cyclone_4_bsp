@@ -267,11 +267,6 @@ module project
     logic[31:0] mem_addr = '0;
     logic[31:0] mem_dat = '0;
 
-    assign int_mem_wif.rst_i = reset;
-    assign a_mix_wif.rst_i = reset;
-    assign mem_spi2_wif.rst_i = reset;
-    assign a_mix_wif.clk_i = mem_wif.clk_i;
-
     mem_wif_t mem_internal();
     mem_wif_t mem_spi2_wif();
     mem_wif_t mem_dummy1();
@@ -283,6 +278,11 @@ module project
             .mem(mem_spi2_wif),
             .spi_rd_cmd(8'h80)
         );
+
+    assign int_mem_wif.rst_i = reset;
+    assign a_mix_wif.rst_i = reset;
+    assign mem_spi2_wif.rst_i = reset;
+    assign a_mix_wif.clk_i = mem_wif.clk_i;
 
     assign mem_internal.clk_i = clk_50MHz;
 
